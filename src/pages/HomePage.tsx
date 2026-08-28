@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronRight, Clock, Play, Repeat, ScrollText, Swords, Trash2, Trophy } from 'lucide-react'
+import { ChevronRight, Play, Trash2 } from 'lucide-react'
 import { useBPStore } from '@/store/bpStore'
 import { useSettingsStore } from '@/store/settingsStore'
 import { MatchSetupDialog } from '@/components/match/MatchSetupDialog'
@@ -8,13 +8,6 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { formatDateTime } from '@/utils/format'
 import { SIDE_TEXT } from '@/types/bp'
 import type { MatchState } from '@/types/match'
-
-const FEATURES = [
-  { icon: Repeat, title: 'BO3 赛制', desc: '三局两胜自动推进，比分与胜负全程记录' },
-  { icon: Swords, title: 'Ban / Pick 序列', desc: '蓝红双方按配置顺序禁用与选择，规则可配置' },
-  { icon: Clock, title: '赛事训练', desc: '倒计时 + 连续行动提示，还原赛场 BP 节奏' },
-  { icon: ScrollText, title: 'BP 复盘', desc: '完整操作历史、赛果文本与 JSON 导出' },
-] as const
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -39,36 +32,44 @@ export default function HomePage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 pb-16">
-      {/* Hero */}
-      <section className="bg-arena relative mt-6 overflow-hidden rounded-2xl border border-ink-600 px-6 py-12 text-center lg:py-16">
-        <p className="mb-3 inline-block rounded-full border border-gold/40 bg-gold/10 px-3 py-1 text-[11px] tracking-widest text-gold">
-          玩家自制 · 非官方赛事工具
+    <div className="mx-auto w-full max-w-4xl px-4 pb-16">
+      {/* Hero：第一屏重点是「开始比赛」 */}
+      <section className="bg-arena-grid bg-chakra-flow relative mt-5 overflow-hidden rounded-lg border border-border-muted px-6 py-14 text-center lg:py-20">
+        <p className="mb-4 inline-block border border-gold-accent/40 bg-gold-accent/10 px-2.5 py-0.5 text-[11px] tracking-[0.3em] text-gold-accent">
+          玩家自制 · 非官方
         </p>
-        <h1 className="text-hero text-4xl font-black tracking-wide lg:text-6xl">忍界 BP</h1>
-        <p className="mt-3 text-sm text-fog-300 lg:text-base">火影忍者手游 · 武斗赛 BP 模拟器</p>
-        <p className="mx-auto mt-2 max-w-xl text-xs leading-relaxed text-fog-600">
-          完整模拟 BO3 Ban / Pick 流程：禁用继承、忍者消耗、比分推进与 BP 复盘，全部在浏览器本地完成。
+        <h1 className="text-hero text-5xl font-black tracking-wide lg:text-7xl">忍界 BP</h1>
+        <p className="mt-4 text-sm tracking-[0.2em] text-fog-300 lg:text-base">
+          火影忍者手游 · 武斗赛 BP 模拟器
         </p>
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <p className="mx-auto mt-3 max-w-md text-xs leading-relaxed text-fog-600">
+          完整模拟 BO3 Ban / Pick 流程：禁用继承、忍者消耗、比分推进与 BP 复盘
+        </p>
+        <div className="mt-9 flex flex-wrap items-center justify-center gap-2.5">
           <button
             type="button"
             onClick={() => setSetupOpen(true)}
-            className="flex items-center gap-2 rounded-lg bg-side-blue px-7 py-3 text-sm font-bold text-white shadow-lg shadow-side-blue/25 transition-all hover:brightness-110 active:scale-[0.98]"
+            className="flex items-center gap-2 rounded bg-blue-team px-7 py-3 text-sm font-bold text-white transition-all hover:brightness-110 active:scale-[0.98]"
           >
-            <Play size={16} /> 开始 BP
+            <Play size={15} /> 开始 BP
           </button>
           <Link
             to="/ninjas"
-            className="rounded-lg border border-ink-500 px-5 py-3 text-sm text-fog-300 transition-colors hover:bg-ink-600"
+            className="rounded border border-border-strong px-5 py-3 text-sm text-fog-300 transition-colors hover:bg-surface-2"
           >
-            忍者池管理
+            忍者池
           </Link>
           <Link
             to="/settings"
-            className="rounded-lg border border-ink-500 px-5 py-3 text-sm text-fog-300 transition-colors hover:bg-ink-600"
+            className="rounded border border-border-strong px-5 py-3 text-sm text-fog-300 transition-colors hover:bg-surface-2"
           >
-            设置
+            规则
+          </Link>
+          <Link
+            to="/about"
+            className="rounded border border-border-strong px-5 py-3 text-sm text-fog-300 transition-colors hover:bg-surface-2"
+          >
+            关于
           </Link>
         </div>
 
@@ -76,100 +77,61 @@ export default function HomePage() {
           <button
             type="button"
             onClick={() => handleContinue(unfinishedCurrent.id)}
-            className="mx-auto mt-6 flex items-center gap-3 rounded-xl border border-gold/40 bg-gold/10 px-5 py-3 text-left transition-colors hover:bg-gold/15"
+            className="mx-auto mt-7 flex items-center gap-3 rounded border border-gold-accent/40 bg-gold-accent/10 px-5 py-2.5 text-left transition-colors hover:bg-gold-accent/15"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gold/20 text-gold">
-              <Play size={16} />
-            </span>
             <span>
-              <span className="block text-sm font-semibold text-fog-100">有未完成的比赛</span>
+              <span className="block text-sm font-semibold text-fog-100">继续未完成的比赛</span>
               <span className="block text-xs text-fog-500">
                 {unfinishedCurrent.bluePlayerName} {unfinishedCurrent.score.blue}:{unfinishedCurrent.score.red}{' '}
-                {unfinishedCurrent.redPlayerName} · 点击继续
+                {unfinishedCurrent.redPlayerName}
               </span>
             </span>
-            <ChevronRight size={16} className="text-fog-600" />
+            <ChevronRight size={15} className="text-fog-600" />
           </button>
+        )}
+
+        {/* 首次使用引导（轻量一行） */}
+        {!settings.firstUseTipSeen && (
+          <p className="mx-auto mt-8 max-w-xl text-xs leading-relaxed text-fog-500">
+            流程只有 4 步：<span className="text-fog-300">按序 Ban</span> →{' '}
+            <span className="text-fog-300">按序 Pick</span> →{' '}
+            <span className="text-fog-300">记录本局胜负</span> →{' '}
+            <span className="text-fog-300">BO3 自动推进</span>
+            <button
+              type="button"
+              onClick={() => updateSettings({ firstUseTipSeen: true })}
+              className="ml-2 text-fog-600 underline underline-offset-2 hover:text-fog-300"
+            >
+              知道了
+            </button>
+          </p>
         )}
       </section>
 
-      {/* 首次使用引导 */}
-      {!settings.firstUseTipSeen && (
-        <section className="mt-4 rounded-xl border border-ink-600 bg-ink-800/70 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-fog-100">第一次使用？流程只有 4 步</h2>
-              <p className="mt-1 text-xs text-fog-500">
-                1. 按顺序 Ban 忍者 → 2. 按顺序 Pick 上场阵容 → 3. 记录本局胜负 → 4. BO3 自动推进到比赛结束
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  updateSettings({ firstUseTipSeen: true })
-                  setSetupOpen(true)
-                }}
-                className="rounded-lg bg-side-blue px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-side-blue/85"
-              >
-                开始 BP
-              </button>
-              <button
-                type="button"
-                onClick={() => updateSettings({ firstUseTipSeen: true })}
-                className="rounded-lg border border-ink-500 px-4 py-2 text-xs text-fog-400 transition-colors hover:bg-ink-600"
-              >
-                知道了
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* 特点 */}
-      <section className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {FEATURES.map((f) => (
-          <div key={f.title} className="rounded-xl border border-ink-600 bg-ink-800/50 p-4 transition-colors hover:border-ink-500">
-            <f.icon size={18} className="text-side-blue-soft" />
-            <h3 className="mt-2 text-sm font-semibold text-fog-100">{f.title}</h3>
-            <p className="mt-1 text-xs leading-relaxed text-fog-600">{f.desc}</p>
-          </div>
-        ))}
-      </section>
-
-      {/* 最近比赛 */}
-      <section className="mt-8">
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-fog-100">
-          <Trophy size={14} className="text-gold" /> 最近比赛
-        </h2>
+      {/* 最近比赛：降低视觉优先级 */}
+      <section className="mt-10">
+        <h2 className="mb-3 text-xs font-bold tracking-[0.25em] text-fog-600">最近比赛</h2>
         {recentMatches.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-ink-500 py-10 text-center text-sm text-fog-600">
-            还没有比赛记录，点击「开始 BP」创建第一场
-          </div>
+          <p className="rounded border border-dashed border-border-strong py-8 text-center text-sm text-fog-600">
+            还没有比赛记录
+          </p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="divide-y divide-border-muted rounded border border-border-muted">
             {recentMatches.map((m) => (
-              <li
-                key={m.id}
-                className="flex flex-wrap items-center gap-3 rounded-xl border border-ink-600 bg-ink-800/50 px-4 py-3"
-              >
+              <li key={m.id} className="flex flex-wrap items-center gap-3 bg-surface-1/40 px-4 py-2.5">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-fog-100">
-                    <span className="text-side-blue-soft">{m.bluePlayerName}</span>
+                    <span className="text-blue-team-soft">{m.bluePlayerName}</span>
                     <span className="mx-2 font-bold tabular-nums">
                       {m.score.blue} : {m.score.red}
                     </span>
-                    <span className="text-side-red-soft">{m.redPlayerName}</span>
+                    <span className="text-red-team-soft">{m.redPlayerName}</span>
                   </p>
-                  <p className="mt-0.5 text-[11px] text-fog-600">
-                    {formatDateTime(m.updatedAt)} · {m.rule.name}
-                  </p>
+                  <p className="mt-0.5 text-[11px] text-fog-600">{formatDateTime(m.updatedAt)}</p>
                 </div>
                 <span
-                  className={`rounded px-2 py-0.5 text-[10px] font-bold ${
-                    m.status === 'MATCH_FINISHED'
-                      ? 'bg-emerald-500/15 text-emerald-300'
-                      : 'bg-gold/15 text-gold'
+                  className={`text-[11px] font-bold ${
+                    m.status === 'MATCH_FINISHED' ? 'text-emerald-400/90' : 'text-gold-accent'
                   }`}
                 >
                   {m.status === 'MATCH_FINISHED'
@@ -180,26 +142,26 @@ export default function HomePage() {
                   {m.status === 'MATCH_FINISHED' ? (
                     <Link
                       to={`/result/${m.id}`}
-                      className="rounded-lg border border-ink-500 px-3 py-1.5 text-xs text-fog-300 transition-colors hover:bg-ink-600"
+                      className="rounded border border-border-strong px-2.5 py-1 text-xs text-fog-300 transition-colors hover:bg-surface-2"
                     >
-                      查看结果
+                      结果
                     </Link>
                   ) : (
                     <button
                       type="button"
                       onClick={() => handleContinue(m.id)}
-                      className="rounded-lg bg-side-blue/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-side-blue"
+                      className="rounded bg-blue-team/90 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:brightness-110"
                     >
-                      继续比赛
+                      继续
                     </button>
                   )}
                   <button
                     type="button"
                     onClick={() => setDeleteTarget(m)}
                     aria-label="删除记录"
-                    className="rounded-lg border border-ink-500 p-1.5 text-fog-500 transition-colors hover:border-side-red/50 hover:text-side-red-soft"
+                    className="rounded border border-border-strong p-1 text-fog-600 transition-colors hover:border-red-team/50 hover:text-red-team-soft"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </li>

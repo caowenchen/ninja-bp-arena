@@ -12,26 +12,26 @@ interface PlayerPanelProps {
 }
 
 /**
- * 玩家区域：Ban / Pick 槽位全部由当前局的规则序列推导，
- * 当前行动方一侧有高亮描边与「行动中」指示。
- * 桌面为纵向面板，移动端自动切换为紧凑横向布局。
+ * 阵容面板（桌面端左右两侧）：
+ * - PICK 使用接近人物卡比例的大槽位，形成 BLUE VS RED 对阵感
+ * - BAN 槽位更小、灰阶，明显区别于 Pick
+ * - 当前行动方一侧轻微强化（描边 + 阴影），另一侧降低视觉权重
+ * 槽位数量由当前局的规则序列推导；名字直接可见，不只显示 P1/P2/P3。
  */
 export function PlayerPanel({ side }: PlayerPanelProps) {
   const match = useBPStore((s) => s.match)
   const ninjaById = useNinjaStore((s) => s.getById)
 
-  const { banSlots, pickSlots, acting } = useMemo(() => {
-    if (!match) return { banSlots: [], pickSlots: [], acting: false }
+  const { bans, picks, hasBanPhase, acting } = useMemo(() => {
+    if (!match) return { bans: [] as (string | undefined)[], picks: [] as (string | undefined)[], hasBanPhase: false, acting: false }
     const phase = getPhase(match)
     const game = match.games[match.games.length - 1]
     const player = side === 'BLUE' ? game.blue : game.red
     const steps = phase.expanded.filter((e) => e.side === side)
-
-    const bans = steps.filter((e) => e.action === 'BAN').map((_, i) => player.bans[i])
-    const picks = steps.filter((e) => e.action === 'PICK').map((_, i) => player.picks[i])
     return {
-      banSlots: bans,
-      pickSlots: picks,
+      bans: steps.filter((e) => e.action === 'BAN').map((_, i) => player.bans[i]),
+      picks: steps.filter((e) => e.action === 'PICK').map((_, i) => player.picks[i]),
+      hasBanPhase: steps.some((e) => e.action === 'BAN'),
       acting: phase.side === side && !phase.sequenceComplete,
     }
   }, [match, side])
@@ -40,40 +40,37 @@ export function PlayerPanel({ side }: PlayerPanelProps) {
 
   const isBlue = side === 'BLUE'
   const playerName = isBlue ? match.bluePlayerName : match.redPlayerName
+  const teamColor = isBlue ? 'text-blue-team-soft' : 'text-red-team-soft'
 
   return (
     <aside
-      className={`flex flex-col gap-3 rounded-xl border bg-ink-800/70 p-3 transition-colors lg:p-4 ${
+      className={`flex flex-col gap-3.5 rounded-lg border bg-surface-1/70 p-3.5 transition-all ${
         acting
           ? isBlue
-            ? 'border-side-blue/70 shadow-[0_0_24px_-6px] shadow-side-blue/40'
-            : 'border-side-red/70 shadow-[0_0_24px_-6px] shadow-side-red/40'
-          : 'border-ink-600'
+            ? 'border-blue-team/70 shadow-[0_0_28px_-8px] shadow-blue-team/50'
+            : 'border-red-team/70 shadow-[0_0_28px_-8px] shadow-red-team/50'
+          : 'border-border-muted opacity-85'
       }`}
     >
-      <header className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span
-            className={`rounded px-1.5 py-0.5 text-[10px] font-bold tracking-widest ${
-              isBlue ? 'bg-side-blue/20 text-side-blue-soft' : 'bg-side-red/20 text-side-red-soft'
-            }`}
-          >
-            {isBlue ? 'BLUE 蓝方' : 'RED 红方'}
+      <header className="flex items-center justify-between gap-2 border-b border-border-muted pb-2.5">
+        <div className="min-w-0">
+          <span className={`text-[10px] font-bold tracking-[0.2em] ${teamColor}`}>
+            {isBlue ? 'BLUE' : 'RED'} · {isBlue ? '蓝方' : '红方'}
           </span>
-          <span className="truncate text-sm font-medium text-fog-100">{playerName}</span>
+          <p className="truncate text-base font-bold text-fog-100">{playerName}</p>
         </div>
         {acting && (
-          <span className={`flex items-center gap-1 text-[10px] ${isBlue ? 'text-side-blue-soft' : 'text-side-red-soft'}`}>
+          <span className={`flex shrink-0 items-center gap-1 text-[10px] font-medium ${teamColor}`}>
             <Radio size={10} className="animate-pulse" /> 行动中
           </span>
         )}
       </header>
 
-      {banSlots.length > 0 && (
+      {hasBanPhase && (
         <section>
-          <h4 className="mb-1.5 text-[10px] font-semibold tracking-widest text-fog-600">BAN · 禁用</h4>
-          <div className="flex gap-1.5">
-            {banSlots.map((id, i) => (
+          <h4 className="mb-1.5 text-[9px] font-bold tracking-[0.25em] text-fog-600">BAN · 禁用</h4>
+          <div className="flex gap-2">
+            {bans.map((id, i) => (
               <BanSlot key={`ban-${i}`} ninja={id ? ninjaById(id) : undefined} />
             ))}
           </div>
@@ -81,9 +78,9 @@ export function PlayerPanel({ side }: PlayerPanelProps) {
       )}
 
       <section>
-        <h4 className="mb-1.5 text-[10px] font-semibold tracking-widest text-fog-600">PICK · 出战</h4>
-        <div className="flex gap-1.5">
-          {pickSlots.map((id, i) => (
+        <h4 className="mb-1.5 text-[9px] font-bold tracking-[0.25em] text-fog-600">PICK · 出战</h4>
+        <div className="grid grid-cols-3 gap-2">
+          {picks.map((id, i) => (
             <PickSlot key={`pick-${i}`} ninja={id ? ninjaById(id) : undefined} order={i + 1} side={side} />
           ))}
         </div>

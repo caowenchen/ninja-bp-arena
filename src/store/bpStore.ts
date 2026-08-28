@@ -11,6 +11,7 @@ import {
   startMatch,
 } from '@/engine/bpEngine'
 import { emptyStacks, recordSnapshot, redo, undo, type UndoStacks } from '@/engine/historyEngine'
+import { validateMatchState } from '@/engine/matchValidator'
 import { useNinjaStore } from './ninjaStore'
 import { useSettingsStore } from './settingsStore'
 import { playSound } from '@/utils/sound'
@@ -28,17 +29,23 @@ import { toast } from './toastStore'
 
 const MAX_RECENT = 20
 
-function isMatchState(value: unknown): boolean {
-  return typeof value === 'object' && value !== null && 'games' in value && 'rule' in value
-}
-
-function isMatchArray(value: unknown): boolean {
-  return Array.isArray(value)
-}
-
 interface OpResult {
   ok: boolean
   reason?: string
+}
+
+/** 从本地数组中筛出合法比赛，丢弃损坏条目并给出警告 */
+function sanitizeMatchList(raw: unknown, source: string): MatchState[] {
+  if (!Array.isArray(raw)) return []
+  const valid: MatchState[] = []
+  for (const item of raw) {
+    if (validateMatchState(item)) {
+      valid.push(item as MatchState)
+    } else {
+      console.warn(`[bpStore] ${source} 中存在损坏的比赛记录，已丢弃`)
+    }
+  }
+  return valid
 }
 
 interface BPStore {
@@ -63,6 +70,8 @@ interface BPStore {
   resetMatch: () => void
   deleteRecent: (id: string) => void
   clearCurrent: () => void
+  /** 恢复备份：整体替换当前比赛与历史（数据已在上层校验） */
+  restoreBackup: (currentMatch: MatchState | null, recentMatches: MatchState[]) => void
 }
 
 /** 应用一次引擎变更：压快照 → 更新状态 → 持久化（含最近比赛列表） */
@@ -82,10 +91,10 @@ function persistMatch(match: MatchState) {
 }
 
 export const useBPStore = create<BPStore>()((set, get) => ({
-  // 启动即恢复最近一场比赛（损坏数据自动回退为 null）
-  match: loadJSON<MatchState | null>(STORAGE_KEYS.currentMatch, null, isMatchState),
+  // 启动即恢复最近一场比赛：严格校验，损坏数据整体回退为 null
+  match: loadJSON<MatchState | null>(STORAGE_KEYS.currentMatch, null, (v) => validateMatchState(v)),
   stacks: emptyStacks(),
-  recentMatches: loadJSON<MatchState[]>(STORAGE_KEYS.recentMatches, [], isMatchArray),
+  recentMatches: sanitizeMatchList(loadJSON<unknown>(STORAGE_KEYS.recentMatches, []), 'recent_matches'),
 
   startNewMatch: (bluePlayerName, redPlayerName) => {
     const rule = useSettingsStore.getState().activeRule()
@@ -200,5 +209,13 @@ export const useBPStore = create<BPStore>()((set, get) => ({
   clearCurrent: () => {
     set({ match: null })
     removeKey(STORAGE_KEYS.currentMatch)
+  },
+
+  restoreBackup: (currentMatch, recentMatches) => {
+    const nextRecent = recentMatches.slice(0, MAX_RECENT)
+    set({ match: currentMatch, stacks: emptyStacks(), recentMatches: nextRecent })
+    if (currentMatch) saveJSON(STORAGE_KEYS.currentMatch, currentMatch)
+    else removeKey(STORAGE_KEYS.currentMatch)
+    saveJSON(STORAGE_KEYS.recentMatches, nextRecent)
   },
 }))

@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 
 interface DialogProps {
@@ -11,15 +11,24 @@ interface DialogProps {
   wide?: boolean
 }
 
-/** 通用模态框：Esc 关闭、点击遮罩关闭、真正的 dialog 语义结构 */
+/** 通用模态框：Esc 关闭、点击遮罩关闭、打开时移入焦点 / 关闭后归还焦点 */
 export function Dialog({ open, onClose, title, children, footer, wide }: DialogProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    // 合理焦点管理：记录并移入焦点，关闭时归还
+    previousFocusRef.current = document.activeElement as HTMLElement | null
+    panelRef.current?.focus()
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      previousFocusRef.current?.focus?.()
+    }
   }, [open, onClose])
 
   if (!open) return null
@@ -33,23 +42,25 @@ export function Dialog({ open, onClose, title, children, footer, wide }: DialogP
       role="presentation"
     >
       <div
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl border border-ink-500 bg-ink-800 shadow-2xl shadow-black/60`}
+        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-lg border border-border-strong bg-surface-1 shadow-2xl shadow-black/60 outline-none`}
       >
-        <div className="flex items-center justify-between border-b border-ink-600 px-5 py-3.5">
+        <div className="flex items-center justify-between border-b border-border-muted px-5 py-3.5">
           <h3 className="text-sm font-semibold tracking-wide text-fog-100">{title}</h3>
           <button
             type="button"
             onClick={onClose}
             aria-label="关闭"
-            className="rounded-md p-1.5 text-fog-500 transition-colors hover:bg-ink-600 hover:text-fog-100"
+            className="rounded p-1.5 text-fog-500 transition-colors hover:bg-surface-2 hover:text-fog-100"
           >
             <X size={16} />
           </button>
         </div>
         <div className="px-5 py-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-ink-600 px-5 py-3.5">{footer}</div>}
+        {footer && <div className="flex justify-end gap-2 border-t border-border-muted px-5 py-3.5">{footer}</div>}
       </div>
     </div>
   )

@@ -107,7 +107,7 @@ export function buildShareText(m: MatchState, nameOf: (id: string) => string): s
 
   lines.push('忍界 BP｜武斗赛模拟结果')
   lines.push(`${m.rule.name}`)
-  lines.push(`BO${m.rule.bestOf}　蓝方 ${m.score.blue} : ${m.score.red} 红方`)
+  lines.push(`BO${m.rule.bestOf}  蓝方 ${m.score.blue} : ${m.score.red} 红方`)
   if (finished && winnerSide) {
     lines.push(`总胜者：${SIDE_TEXT[winnerSide]}（${winnerSide === 'BLUE' ? m.bluePlayerName : m.redPlayerName}）`)
   }

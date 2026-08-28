@@ -16,7 +16,10 @@ export function ScoreBoard({ match }: ScoreBoardProps) {
         <span className="text-[9px] tracking-widest text-fog-600">BLUE</span>
       </div>
       <div className="flex flex-col items-center">
-        <span className="text-lg font-bold tabular-nums tracking-wider text-fog-100 sm:text-2xl">
+        <span
+          key={`${match.score.blue}-${match.score.red}`}
+          className="score-pop text-lg font-bold tabular-nums tracking-wider text-fog-100 sm:text-2xl"
+        >
           {match.score.blue}
           <span className="mx-1.5 text-fog-600">:</span>
           {match.score.red}

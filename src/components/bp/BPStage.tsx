@@ -17,15 +17,15 @@ function SequenceStrip({ match }: { match: MatchState }) {
           <span
             key={index}
             title={`${SIDE_LABEL[step.side]} ${isBan ? '禁用' : '选择'}`}
-            className={`flex h-5 w-7 items-center justify-center rounded text-[9px] font-bold transition-colors ${
+            className={`flex h-5 w-7 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${
               current
                 ? isBan
-                  ? 'bg-side-red text-white ring-2 ring-side-red/50'
-                  : 'bg-side-blue text-white ring-2 ring-side-blue/50'
+                  ? 'bg-side-red text-white ring-1 ring-side-red/60'
+                  : 'bg-side-blue text-white ring-1 ring-side-blue/60'
                 : done
                   ? isBan
-                    ? 'bg-side-red/25 text-side-red-soft/80'
-                    : 'bg-side-blue/25 text-side-blue-soft/80'
+                    ? 'bg-side-red/20 text-side-red-soft/70'
+                    : 'bg-side-blue/20 text-side-blue-soft/70'
                   : 'bg-ink-700 text-fog-600'
             }`}
           >
@@ -40,90 +40,85 @@ function SequenceStrip({ match }: { match: MatchState }) {
 
 interface BPStageProps {
   match: MatchState
-  /** 超时遮罩是否激活（激活时暂停倒计时并给出恢复按钮） */
+  /** 超时遮罩是否激活（激活时给出恢复操作，不代替玩家选择） */
   timeoutActive: boolean
   onResumeTimeout: () => void
   onRestartTimer: () => void
-  restartSignal: number
   onTimerExpire: () => void
   className?: string
 }
 
 /**
- * 中央舞台：最显眼位置展示当前行动方与剩余数量、倒计时、流程条。
- * READY / PLAYING / 结束态的完整内容在下方全宽区域呈现，这里保持精简状态。
+ * 中央阶段区：比分之下最重要的信息 —— 当前行动方与动作。
+ * 版式强调「BLUE BAN / 蓝方禁用阶段」的赛事语感，配倒计时与流程条。
  */
 export function BPStage({
   match,
   timeoutActive,
   onResumeTimeout,
   onRestartTimer,
-  restartSignal,
   onTimerExpire,
   className = '',
 }: BPStageProps) {
   const phase = getPhase(match)
   const rule = match.rule
+  const inBP = phase.status === 'BANNING' || phase.status === 'PICKING'
 
-  const statusText = (() => {
-    switch (phase.status) {
-      case 'BANNING':
-      case 'PICKING': {
-        if (timeoutActive) return '操作超时 · 管理员可继续操作'
-        const actionText = phase.action === 'BAN' ? '正在禁用' : '正在选择'
-        const remain = phase.remainingInStep
-        return `${SIDE_LABEL[phase.side!]}${actionText} · ${remain > 0 ? `还需选择 ${remain} 名` : '请选择'}`
-      }
-      case 'READY':
-        return '双方阵容已锁定'
-      case 'PLAYING':
-        return '本局比赛进行中'
-      case 'COMPLETED':
-        return '本局已记录胜负'
-    }
-  })()
+  const sideText = phase.side ? SIDE_LABEL[phase.side] : ''
+  const actionEn = phase.action === 'BAN' ? 'BAN' : 'PICK'
+  const actionCn = phase.action === 'BAN' ? '禁用阶段' : '选择阶段'
+  const remainText =
+    phase.remainingInStep > 1
+      ? `还需选择 ${phase.remainingInStep} 名忍者`
+      : '请选择 1 名忍者'
 
   return (
     <section
-      className={`flex flex-col items-center gap-3 rounded-xl border border-ink-600 bg-ink-800/70 px-4 py-4 ${className}`}
+      className={`flex flex-col items-center gap-2.5 rounded-lg border border-ink-600 bg-ink-800/60 px-4 py-3.5 ${className}`}
       aria-live="polite"
     >
-      <div className="flex items-center gap-2">
-        <span className="rounded bg-gold/15 px-2 py-0.5 text-xs font-bold tracking-widest text-gold">
-          GAME {phase.gameNumber}
-        </span>
-        <span className="text-xs text-fog-500">
-          BO{rule.bestOf} · {rule.name}
-        </span>
+      <div className="flex items-center gap-2 text-[11px] tracking-widest text-fog-600">
+        <span>BO{rule.bestOf}</span>
+        <span className="text-ink-400">/</span>
+        <span className="font-semibold text-gold">GAME {phase.gameNumber}</span>
+        <span className="text-ink-400">/</span>
+        <span className="max-w-[180px] truncate">{rule.name}</span>
       </div>
 
-      <p className={`text-center text-base font-semibold lg:text-lg ${timeoutActive ? 'text-side-red' : 'text-fog-100'}`}>
-        {statusText}
-      </p>
-
-      {(phase.status === 'BANNING' || phase.status === 'PICKING') && (
+      {inBP ? (
         <>
-          <CountdownTimer
-            enabled={rule.timerEnabled && !timeoutActive}
-            seconds={rule.timerSeconds}
-            resetKey={`${phase.gameNumber}:${phase.stepIndex ?? 'x'}`}
-            running={phase.status === 'BANNING' || phase.status === 'PICKING'}
-            restartSignal={restartSignal}
-            onExpire={onTimerExpire}
-          />
+          <div className="flex items-center gap-3.5">
+            <CountdownTimer
+              seconds={rule.timerSeconds}
+              running={inBP}
+              onExpire={onTimerExpire}
+            />
+            <div className="text-left">
+              <p
+                className={`text-xl font-black leading-tight tracking-wide lg:text-2xl ${
+                  phase.side === 'BLUE' ? 'text-side-blue-soft' : 'text-side-red-soft'
+                }`}
+              >
+                {phase.side === 'BLUE' ? 'BLUE' : 'RED'} {actionEn}
+              </p>
+              <p className="mt-0.5 text-sm font-medium text-fog-100">
+                {timeoutActive ? '操作超时 · 管理员可继续操作' : `${sideText}${actionCn} · ${remainText}`}
+              </p>
+            </div>
+          </div>
           {timeoutActive && (
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={onResumeTimeout}
-                className="rounded-lg bg-side-blue px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-side-blue/85"
+                className="rounded bg-side-blue px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-side-blue/85"
               >
                 继续选择
               </button>
               <button
                 type="button"
                 onClick={onRestartTimer}
-                className="rounded-lg border border-ink-500 px-3 py-1.5 text-xs text-fog-300 transition-colors hover:bg-ink-600"
+                className="rounded border border-ink-500 px-3 py-1.5 text-xs text-fog-300 transition-colors hover:bg-ink-600"
               >
                 重新计时
               </button>
@@ -131,6 +126,12 @@ export function BPStage({
           )}
           <SequenceStrip match={match} />
         </>
+      ) : (
+        <p className="py-1.5 text-lg font-bold tracking-wide text-fog-100 lg:text-xl">
+          {phase.status === 'READY' && '双方阵容已锁定'}
+          {phase.status === 'PLAYING' && '本局比赛进行中'}
+          {phase.status === 'COMPLETED' && '本局已记录胜负'}
+        </p>
       )}
     </section>
   )

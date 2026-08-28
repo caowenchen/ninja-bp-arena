@@ -284,7 +284,6 @@ describe('场景 E：撤销', () => {
   it('撤销 Ban 后忍者重新可用，阶段正确回退，可改选他人', () => {
     let m = newMatch()
     let stacks = emptyStacks()
-
     stacks = recordSnapshot(stacks, m)
     m = doSelect(m, '漩涡鸣人')
     expect(getUnavailableReason(m, N('漩涡鸣人').id, N('漩涡鸣人'))).toBe('该忍者已被禁用')
@@ -306,6 +305,8 @@ describe('场景 E：撤销', () => {
     m = doSelect(m, '宇智波佐助')
     expect(m.games[0].blue.bans).toEqual([N('宇智波佐助').id])
     expect(getUnavailableReason(m, N('漩涡鸣人').id, N('漩涡鸣人'))).toBeNull()
+    // 此后不再使用 stacks，仅为保持快照栈语义而更新
+    expect(stacks.past.length).toBeGreaterThan(0)
   })
 
   it('撤销可跨过 记录胜负 / 下一局 边界', () => {

@@ -1,7 +1,29 @@
 @import "tailwindcss";
 
 @theme {
-  /* 背景与面板 */
+  /* ---- Design Tokens ---- */
+  /* 背景与面板（语义层） */
+  --color-arena-bg: #07090d;
+  --color-surface-1: #10141c;
+  --color-surface-2: #161b25;
+  --color-border-muted: #1e2431;
+  --color-border-strong: #2a3140;
+
+  /* 文字 */
+  --color-arena-bg: #07090d;
+  --color-fog-600: #6b7385;
+  --color-fog-500: #8b93a7;
+  --color-fog-300: #c3c9d6;
+  --color-fog-100: #eef1f6;
+
+  /* 阵营与强调色 */
+  --color-blue-team: #4d8dff;
+  --color-blue-team-soft: #7db1ff;
+  --color-red-team: #ff5d5d;
+  --color-red-team-soft: #ff9494;
+  --color-gold-accent: #f0b429;
+
+  /* 兼容别名（旧组件逐步迁移） */
   --color-ink-950: #07090d;
   --color-ink-900: #0b0e14;
   --color-ink-800: #10141c;
@@ -9,14 +31,6 @@
   --color-ink-600: #1e2431;
   --color-ink-500: #2a3140;
   --color-ink-400: #3b4356;
-
-  /* 文字 */
-  --color-fog-600: #6b7385;
-  --color-fog-500: #8b93a7;
-  --color-fog-300: #c3c9d6;
-  --color-fog-100: #eef1f6;
-
-  /* 阵营与强调色 */
   --color-side-blue: #4d8dff;
   --color-side-blue-soft: #7db1ff;
   --color-side-red: #ff5d5d;
@@ -32,10 +46,10 @@
     color-scheme: dark;
   }
   body {
-    @apply bg-ink-950 text-fog-100 font-sans antialiased;
+    @apply bg-arena-bg text-fog-100 font-sans antialiased;
     background-image:
-      radial-gradient(ellipse 55% 35% at 18% -5%, rgba(77, 141, 255, 0.09), transparent 65%),
-      radial-gradient(ellipse 45% 30% at 88% 0%, rgba(255, 93, 93, 0.07), transparent 65%);
+      radial-gradient(ellipse 55% 35% at 18% -5%, rgba(77, 141, 255, 0.08), transparent 65%),
+      radial-gradient(ellipse 45% 30% at 88% 0%, rgba(255, 93, 93, 0.06), transparent 65%);
     background-attachment: fixed;
     min-height: 100vh;
   }
@@ -44,15 +58,22 @@
   }
 }
 
-/* 竞技场网格背景（仅首页 hero 等大面积区域使用，克制） */
-.bg-arena {
+/* 赛事网格背景（hero 等大面积区域） */
+.bg-arena-grid {
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
   background-size: 44px 44px;
 }
 
-/* 文字渐变 */
+/* hero 顶部查克拉流线（原创抽象图形） */
+.bg-chakra-flow {
+  background:
+    radial-gradient(ellipse 42% 60% at 12% 110%, rgba(77, 141, 255, 0.14), transparent 60%),
+    radial-gradient(ellipse 38% 55% at 88% 115%, rgba(255, 93, 93, 0.11), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 50% 130%, rgba(240, 180, 41, 0.05), transparent 65%);
+}
+
 .text-hero {
   background: linear-gradient(100deg, #eef1f6 15%, #7db1ff 55%, #f0b429 95%);
   -webkit-background-clip: text;
@@ -69,12 +90,64 @@
   word-break: break-all;
 }
 
-/* 关闭动画（设置里可关闭动画效果） */
+/* 关闭动画（设置里可关闭） */
 .fx-off *,
 .fx-off *::before,
 .fx-off *::after {
   animation: none !important;
   transition: none !important;
+}
+
+/* 系统级减少动态效果 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- 动效（120~250ms，克制） ---- */
+@keyframes slot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.slot-in {
+  animation: slot-in 180ms ease-out;
+}
+
+@keyframes phase-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.phase-in {
+  animation: phase-in 160ms ease-out;
+}
+
+@keyframes score-pop {
+  0% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.score-pop {
+  animation: score-pop 200ms ease-out;
 }
 
 /* 倒计时最后 10 秒警告 */

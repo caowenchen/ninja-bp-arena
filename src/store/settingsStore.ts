@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { BattleRule } from '@/types/bp'
 import { DEFAULT_RULE, cloneRule } from '@/data/defaultRules'
+import { validateStoredRule } from '@/engine/matchValidator'
 import { loadJSON, saveJSON, STORAGE_KEYS } from '@/utils/storage'
 
 /** 应用设置（bp_settings）+ 自定义规则模板（battle_rules） */
@@ -31,16 +32,19 @@ interface SettingsStore {
   update: (patch: Partial<AppSettings>) => void
   saveCustomRule: (rule: BattleRule) => void
   resetCustomRule: () => void
+  /** 恢复备份（数据已在上层校验） */
+  applyBackup: (settings: AppSettings, customRule: BattleRule | null) => void
   /** 当前生效规则（新比赛使用） */
   activeRule: () => BattleRule
 }
 
 export const useSettingsStore = create<SettingsStore>()((set, get) => ({
   settings: loadJSON<AppSettings>(STORAGE_KEYS.bpSettings, DEFAULT_SETTINGS, isSettings),
+  // 规则模板：结构 + 业务规则双重校验，损坏则回退默认模板
   customRule: loadJSON<BattleRule | null>(
     STORAGE_KEYS.battleRules,
     null,
-    (v) => typeof v === 'object' && v !== null && 'banSequence' in v && 'pickSequence' in v,
+    (v) => v === null || validateStoredRule(v),
   ),
 
   update: (patch) => {
@@ -57,6 +61,12 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => ({
   resetCustomRule: () => {
     set({ customRule: null })
     saveJSON(STORAGE_KEYS.battleRules, null)
+  },
+
+  applyBackup: (settings, customRule) => {
+    set({ settings, customRule })
+    saveJSON(STORAGE_KEYS.bpSettings, settings)
+    saveJSON(STORAGE_KEYS.battleRules, customRule)
   },
 
   activeRule: () => {

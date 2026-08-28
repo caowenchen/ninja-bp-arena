@@ -1,7 +1,7 @@
-import { NINJA_QUALITIES, type Ninja, type NinjaQuality } from '@/types/ninja'
+import type { Ninja } from '@/types/ninja'
 
 /**
- * 忍者 JSON 导入 / 导出。
+ * 忍者 JSON 导入 / 导出 + 全量备份。
  * 导入必须严格校验，错误的 JSON 绝不能让应用崩溃。
  */
 
@@ -11,10 +11,11 @@ export interface NinjaImportReport {
   ninjas: Ninja[]
   added: number
   updated: number
+  unchanged: number
 }
 
-function isQuality(value: unknown): value is NinjaQuality {
-  return typeof value === 'string' && (NINJA_QUALITIES as string[]).includes(value)
+function isQuality(value: unknown): boolean {
+  return typeof value === 'string' && ['S', 'A', 'B', 'C'].includes(value)
 }
 
 function genId(): string {
@@ -28,7 +29,7 @@ export function parseNinjaImport(text: string): NinjaImportReport {
   try {
     data = JSON.parse(text)
   } catch (err) {
-    return { ok: false, errors: [`JSON 解析失败：${err instanceof Error ? err.message : String(err)}`], ninjas: [], added: 0, updated: 0 }
+    return { ok: false, errors: [`JSON 解析失败：${err instanceof Error ? err.message : String(err)}`], ninjas: [], added: 0, updated: 0, unchanged: 0 }
   }
 
   // 允许直接传数组，也允许 { ninjas: [...] } 的包装格式
@@ -38,7 +39,7 @@ export function parseNinjaImport(text: string): NinjaImportReport {
   } else if (typeof data === 'object' && data !== null && Array.isArray((data as Record<string, unknown>).ninjas)) {
     list = (data as Record<string, unknown>).ninjas
   } else {
-    return { ok: false, errors: ['JSON 顶层必须是数组，或包含 ninjas 数组的对象'], ninjas: [], added: 0, updated: 0 }
+    return { ok: false, errors: ['JSON 顶层必须是数组，或包含 ninjas 数组的对象'], ninjas: [], added: 0, updated: 0, unchanged: 0 }
   }
 
   const rawList = list as unknown[]
@@ -64,7 +65,7 @@ export function parseNinjaImport(text: string): NinjaImportReport {
       return
     }
 
-    let id = typeof rec.id === 'string' && rec.id.trim() !== '' ? rec.id.trim() : genId()
+    const id = typeof rec.id === 'string' && rec.id.trim() !== '' ? rec.id.trim() : genId()
     if (seenIds.has(id)) {
       errors.push(`第 ${no} 项（${rec.name}）：ID "${id}" 在文件内重复`)
       return
@@ -72,23 +73,41 @@ export function parseNinjaImport(text: string): NinjaImportReport {
     seenIds.add(id)
 
     const tags = Array.isArray(rec.tags) ? rec.tags.filter((t): t is string => typeof t === 'string') : []
+    const aliases = Array.isArray(rec.aliases)
+      ? rec.aliases.filter((t): t is string => typeof t === 'string')
+      : undefined
 
     ninjas.push({
       id,
       name: rec.name.trim(),
+      aliases: aliases && aliases.length > 0 ? aliases : undefined,
       avatar: typeof rec.avatar === 'string' ? rec.avatar : '',
-      quality: rec.quality,
+      quality: rec.quality as Ninja['quality'],
       tags,
       enabled: typeof rec.enabled === 'boolean' ? rec.enabled : true,
+      sortOrder: typeof rec.sortOrder === 'number' && Number.isInteger(rec.sortOrder) ? rec.sortOrder : undefined,
       version: typeof rec.version === 'string' ? rec.version : undefined,
       releaseDate: typeof rec.releaseDate === 'string' ? rec.releaseDate : undefined,
       remark: typeof rec.remark === 'string' ? rec.remark : undefined,
     })
-    // id 是自动生成的场景下一次循环后可能变化，这里仅保证引用一致
-    id = ninjas[ninjas.length - 1].id
   })
 
-  return { ok: errors.length === 0 && ninjas.length > 0, errors, ninjas, added: 0, updated: 0 }
+  return { ok: errors.length === 0 && ninjas.length > 0, errors, ninjas, added: 0, updated: 0, unchanged: 0 }
+}
+
+/** 相对现有池统计导入预览：新增 / 更新 / 无变化 */
+export function previewImport(existing: Ninja[], incoming: Ninja[]): { added: number; updated: number; unchanged: number } {
+  const byId = new Map(existing.map((n) => [n.id, JSON.stringify(n)]))
+  let added = 0
+  let updated = 0
+  let unchanged = 0
+  for (const n of incoming) {
+    const before = byId.get(n.id)
+    if (before === undefined) added += 1
+    else if (before === JSON.stringify(n)) unchanged += 1
+    else updated += 1
+  }
+  return { added, updated, unchanged }
 }
 
 /** 按 id 合并：已存在的更新，不存在的新增 */
@@ -110,4 +129,64 @@ export function mergeNinjas(existing: Ninja[], incoming: Ninja[]): { pool: Ninja
 
 export function exportNinjaPoolJSON(pool: Ninja[]): string {
   return JSON.stringify(pool, null, 2)
+}
+
+// ---------------------------------------------------------------------------
+// 全量备份（忍者池 + 规则 + 设置 + 比赛数据）
+// ---------------------------------------------------------------------------
+
+export interface BackupFile {
+  app: 'ninja-bp-arena'
+  schemaVersion: number
+  exportedAt: string
+  ninjas: unknown
+  customRule: unknown
+  settings: unknown
+  currentMatch: unknown
+  recentMatches: unknown
+}
+
+/** 从 localStorage 原始值组装备份文件（不做校验，恢复时再校验） */
+export function buildBackup(raws: {
+  ninjas: unknown
+  customRule: unknown
+  settings: unknown
+  currentMatch: unknown
+  recentMatches: unknown
+}): BackupFile {
+  return {
+    app: 'ninja-bp-arena',
+    schemaVersion: 2,
+    exportedAt: new Date().toISOString(),
+    ...raws,
+  }
+}
+
+/** 解析备份文件文本；失败返回 null（错误信息在 errors 中） */
+export function parseBackup(text: string): { backup?: BackupFile; errors: string[] } {
+  const errors: string[] = []
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch (err) {
+    return { errors: [`JSON 解析失败：${err instanceof Error ? err.message : String(err)}`] }
+  }
+  if (typeof data !== 'object' || data === null) return { errors: ['备份文件格式不正确'] }
+  const rec = data as Record<string, unknown>
+  if (rec.app !== 'ninja-bp-arena') return { errors: ['不是忍者 BP 的备份文件'] }
+
+  const backup: BackupFile = {
+    app: 'ninja-bp-arena',
+    schemaVersion: typeof rec.schemaVersion === 'number' ? rec.schemaVersion : 1,
+    exportedAt: typeof rec.exportedAt === 'string' ? rec.exportedAt : '',
+    ninjas: rec.ninjas,
+    customRule: rec.customRule ?? null,
+    settings: rec.settings,
+    currentMatch: rec.currentMatch ?? null,
+    recentMatches: rec.recentMatches ?? [],
+  }
+  if (!Array.isArray(backup.ninjas)) errors.push('备份中的忍者池不是数组')
+  if (!Array.isArray(backup.recentMatches)) errors.push('备份中的比赛记录不是数组')
+  if (errors.length) return { errors }
+  return { backup, errors: [] }
 }

@@ -1,55 +1,61 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTimerStore } from '@/store/timerStore'
 
 interface CountdownTimerProps {
-  enabled: boolean
   seconds: number
-  /** 步骤标识：变化时重置倒计时（同一 Step 内连续选择不重置） */
-  resetKey: string
   running: boolean
-  /** 外部「重新计时」信号：数值变化时重置 */
-  restartSignal: number
   onExpire: () => void
+  className?: string
 }
 
 /**
- * 倒计时：每个序列步骤共用一份时间（RED PICK×2 不因第一个 Pick 重置）。
- * 归零不自动代替玩家操作，只回调 onExpire 由界面进入超时状态。
+ * 倒计时展示组件。
+ *
+ * 时间源是 timerStore 里持久化的 deadlineAt 时间戳：
+ * - 剩余秒数 = ceil((deadlineAt - now) / 1000)，刷新页面后恢复真实剩余时间
+ * - deadline 已过 → 剩余 0 并触发 onExpire（进入 TIMEOUT，不自动代选）
+ * - 每 500ms 的本地 tick 只发生在本组件内部，不会带动忍者池重渲染
  */
-export function CountdownTimer({ enabled, seconds, resetKey, running, restartSignal, onExpire }: CountdownTimerProps) {
-  const [remaining, setRemaining] = useState(seconds)
+export function CountdownTimer({ seconds, running, onExpire, className = '' }: CountdownTimerProps) {
+  const deadlineAt = useTimerStore((s) => s.deadlineAt)
+  const [now, setNow] = useState(() => Date.now())
   const expiredRef = useRef(false)
 
-  // 新步骤 / 重新计时 / 秒数变更 → 重置
-  useEffect(() => {
-    setRemaining(seconds)
-    expiredRef.current = false
-  }, [resetKey, restartSignal, seconds])
+  const active = running && typeof deadlineAt === 'number'
 
   useEffect(() => {
-    if (!running || !enabled) return
-    const timer = window.setInterval(() => {
-      setRemaining((prev) => (prev > 0 ? prev - 1 : 0))
-    }, 1000)
+    if (!active) return
+    const timer = window.setInterval(() => setNow(Date.now()), 500)
     return () => window.clearInterval(timer)
-  }, [running, enabled, resetKey, restartSignal, seconds])
+  }, [active, deadlineAt])
+
+  // deadline 变化（新步骤 / 重新计时 / 撤销回退）时重置过期标记
+  useEffect(() => {
+    expiredRef.current = false
+  }, [deadlineAt])
+
+  const remaining =
+    typeof deadlineAt === 'number' ? Math.max(0, Math.ceil((deadlineAt - now) / 1000)) : 0
+  const expired = remaining <= 0
 
   useEffect(() => {
-    if (remaining === 0 && !expiredRef.current && running && enabled) {
+    if (typeof deadlineAt !== 'number') return
+    if (expired && !expiredRef.current) {
       expiredRef.current = true
-      onExpire()
+      if (running) onExpire()
     }
-  }, [remaining, running, enabled, onExpire])
+  }, [expired, running, onExpire, deadlineAt])
 
-  if (!enabled) return null
+  if (deadlineAt === null) return null
 
   const total = Math.max(1, seconds)
-  const progress = remaining / total
-  const warning = remaining <= 10
+  const progress = Math.max(0, Math.min(1, remaining / total))
+  const warning = remaining <= 10 && !expired
   const radius = 26
   const circumference = 2 * Math.PI * radius
 
   return (
-    <div className={`relative flex items-center gap-2 ${warning && running ? 'timer-warning' : ''}`}>
+    <div className={`relative ${warning ? 'timer-warning' : ''} ${className}`}>
       <svg width="64" height="64" viewBox="0 0 64 64" className="-rotate-90">
         <circle cx="32" cy="32" r={radius} fill="none" stroke="currentColor" strokeWidth="4" className="text-ink-600" />
         <circle
@@ -62,11 +68,13 @@ export function CountdownTimer({ enabled, seconds, resetKey, running, restartSig
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - progress)}
-          className={warning ? 'text-side-red' : 'text-gold'}
+          className={expired || warning ? 'text-side-red' : 'text-gold'}
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className={`text-base font-bold tabular-nums ${warning ? 'text-side-red' : 'text-fog-100'}`}>{remaining}</span>
+        <span className={`text-base font-bold tabular-nums ${expired || warning ? 'text-side-red' : 'text-fog-100'}`}>
+          {remaining}
+        </span>
       </div>
     </div>
   )
