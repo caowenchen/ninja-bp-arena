@@ -296,6 +296,7 @@ export function applyRoomCommand(ctx: RoomCommandContext, cmd: RoomCommand): Com
   if (result.extra === 'ACTIVE') nextStatus = 'ACTIVE'
   if (result.extra === 'FINISHED') nextStatus = 'FINISHED'
   if (result.extra === 'WAITING') nextStatus = 'WAITING'
+  if (result.extra === 'CLOSED') nextStatus = 'CLOSED'
 
   // 计时器：只有服务器有权生成 deadline。
   // 阶段变化（新步骤/换局/开始）→ 以服务器时间重建；RESTART_TIMER → 立即重建。
