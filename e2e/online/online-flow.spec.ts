@@ -143,8 +143,8 @@ test.describe.serial('在线 BO3 全流程', () => {
   })
 
   test('Game2：Ban 保持、Game1 出场 USED，红方胜', async () => {
-    // Ban 保持
-    await expect(blue.getByRole('button', { name: /漩涡鸣人（已禁用）/ })).toBeVisible()
+    // Ban 保持（本流中蓝方 Ban 的是佐助：鸣人被撤销后改 Ban 佐助）
+    await expect(blue.getByRole('button', { name: /宇智波佐助（已禁用）/ })).toBeVisible()
     // Game1 出场忍者 USED（两端一致）
     await expect(blue.getByRole('button', { name: /自来也（已使用）/ })).toBeVisible()
     await expect(red.getByRole('button', { name: /纲手（已使用）/ })).toBeVisible()
