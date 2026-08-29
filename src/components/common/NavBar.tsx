@@ -6,6 +6,7 @@ import { useBPStore } from '@/store/bpStore'
 
 const NAV_ITEMS = [
   { to: '/', label: '首页' },
+  { to: '/online', label: '在线 BP' },
   { to: '/ninjas', label: '忍者池', icon: ScrollText },
   { to: '/settings', label: '规则设置', icon: Settings },
   { to: '/about', label: '关于' },
@@ -42,7 +43,7 @@ export function NavBar() {
               to={item.to}
               end={item.to === '/'}
               className={({ isActive }) =>
-                `rounded px-3 py-1.5 text-sm transition-colors ${
+                `rounded px-2.5 py-1.5 text-sm transition-colors lg:px-3 ${
                   isActive ? 'bg-surface-2 text-fog-100' : 'text-fog-400 hover:bg-surface-2 hover:text-fog-100'
                 }`
               }
@@ -50,10 +51,16 @@ export function NavBar() {
               {item.label}
             </NavLink>
           ))}
+          <Link
+            to="/bp"
+            className="ml-1 flex items-center gap-1.5 rounded border border-blue-team/50 px-3 py-1.5 text-sm font-bold text-blue-team-soft transition-colors hover:bg-blue-team/10"
+          >
+            本地 BP
+          </Link>
           <button
             type="button"
             onClick={() => setSetupOpen(true)}
-            className="ml-1 flex items-center gap-1.5 rounded bg-blue-team px-3.5 py-1.5 text-sm font-bold text-white transition-colors hover:brightness-110"
+            className="flex items-center gap-1.5 rounded bg-blue-team px-3.5 py-1.5 text-sm font-bold text-white transition-colors hover:brightness-110"
           >
             <Play size={13} /> 开始 BP
           </button>

@@ -41,7 +41,12 @@ jobs:
         run: npm run test
 
       # 全部通过后才构建 / 部署（子路径 base + SPA 404 兜底）
+      # 在线 BP 需要 Supabase 前端凭据：在仓库 Variables 中配置
+      # VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY（均为公开凭据）
       - name: Build for GitHub Pages
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
         run: npm run build:pages
 
       - name: Setup Pages

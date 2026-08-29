@@ -1,7 +1,7 @@
 import { Swords } from 'lucide-react'
 import type { Side } from '@/types/bp'
 import type { MatchState } from '@/types/match'
-import { useBPStore } from '@/store/bpStore'
+import { useMatchSource } from '@/matchSource/context'
 import { NinjaAvatar } from '@/components/ninja/NinjaAvatar'
 import { useNinjaStore } from '@/store/ninjaStore'
 
@@ -9,11 +9,9 @@ interface ReadyStageProps {
   match: MatchState
 }
 
-/** GAME READY：中央 VS 阵容展示 + 进入比赛 / 返回修改（= 撤销） */
+/** GAME READY：中央 VS 阵容展示 + 进入比赛 / 返回修改（本地=撤销，在线=撤销请求） */
 export function ReadyStage({ match }: ReadyStageProps) {
-  const enterGame = useBPStore((s) => s.enterGame)
-  const undo = useBPStore((s) => s.undo)
-  const canUndo = useBPStore((s) => s.canUndo())
+  const source = useMatchSource()
   const game = match.games[match.games.length - 1]
   const ninjaById = useNinjaStore((s) => s.getById)
 
@@ -55,18 +53,18 @@ export function ReadyStage({ match }: ReadyStageProps) {
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
         <button
           type="button"
-          onClick={() => enterGame()}
+          onClick={() => source.enterGame()}
           className="rounded-lg bg-gold px-6 py-2.5 text-sm font-bold text-ink-950 transition-all hover:brightness-110 active:scale-[0.98]"
         >
           进入比赛
         </button>
         <button
           type="button"
-          onClick={() => undo()}
-          disabled={!canUndo}
+          onClick={() => source.undo()}
+          disabled={!source.canUndo}
           className="rounded-lg border border-ink-500 px-4 py-2.5 text-sm text-fog-300 transition-colors hover:bg-ink-600 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          返回修改（撤销）
+          返回修改{source.mode === 'online' ? '（发送撤销请求）' : '（撤销）'}
         </button>
       </div>
       <p className="mt-3 text-center text-xs text-fog-600">「返回修改」会撤销最后一步 BP 操作</p>

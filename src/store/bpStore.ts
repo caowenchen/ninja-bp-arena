@@ -72,6 +72,8 @@ interface BPStore {
   clearCurrent: () => void
   /** 恢复备份：整体替换当前比赛与历史（数据已在上层校验） */
   restoreBackup: (currentMatch: MatchState | null, recentMatches: MatchState[]) => void
+  /** 在线比赛结束后保存到本地历史（按 id 去重，不覆盖当前比赛） */
+  saveExternalMatch: (match: MatchState) => void
 }
 
 /** 应用一次引擎变更：压快照 → 更新状态 → 持久化（含最近比赛列表） */
@@ -217,5 +219,15 @@ export const useBPStore = create<BPStore>()((set, get) => ({
     if (currentMatch) saveJSON(STORAGE_KEYS.currentMatch, currentMatch)
     else removeKey(STORAGE_KEYS.currentMatch)
     saveJSON(STORAGE_KEYS.recentMatches, nextRecent)
+  },
+
+  saveExternalMatch: (match) => {
+    if (!validateMatchState(match)) {
+      toast('该比赛数据未通过校验，无法保存', 'error')
+      return
+    }
+    const recent = [match, ...get().recentMatches.filter((m) => m.id !== match.id)].slice(0, MAX_RECENT)
+    set({ recentMatches: recent })
+    saveJSON(STORAGE_KEYS.recentMatches, recent)
   },
 }))

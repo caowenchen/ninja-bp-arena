@@ -6,6 +6,8 @@ import NinjaPoolPage from '@/pages/NinjaPoolPage'
 import SettingsPage from '@/pages/SettingsPage'
 import ResultPage from '@/pages/ResultPage'
 import AboutPage from '@/pages/AboutPage'
+import OnlineHubPage from '@/pages/OnlineHubPage'
+import RoomPage from '@/pages/RoomPage'
 
 /**
  * GitHub Pages 项目页部署时 Vite base 为 /ninja-bp-arena/，
@@ -22,6 +24,8 @@ export const router = createBrowserRouter(
       children: [
         { index: true, element: <HomePage /> },
         { path: 'bp', element: <BPPage /> },
+        { path: 'online', element: <OnlineHubPage /> },
+        { path: 'room/:code', element: <RoomPage /> },
         { path: 'ninjas', element: <NinjaPoolPage /> },
         { path: 'settings', element: <SettingsPage /> },
         { path: 'result/:id', element: <ResultPage /> },

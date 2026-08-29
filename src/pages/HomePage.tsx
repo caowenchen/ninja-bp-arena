@@ -49,10 +49,16 @@ export default function HomePage() {
           <button
             type="button"
             onClick={() => setSetupOpen(true)}
-            className="flex items-center gap-2 rounded bg-blue-team px-7 py-3 text-sm font-bold text-white transition-all hover:brightness-110 active:scale-[0.98]"
+            className="flex items-center gap-2 rounded bg-blue-team px-7 py-3 text-sm font-bold text-white shadow-lg shadow-blue-team/20 transition-all hover:brightness-110 active:scale-[0.98]"
           >
             <Play size={15} /> 开始 BP
           </button>
+          <Link
+            to="/online"
+            className="rounded border border-gold-accent/50 bg-gold-accent/10 px-5 py-3 text-sm font-bold text-gold-accent transition-colors hover:bg-gold-accent/20"
+          >
+            在线 BP
+          </Link>
           <Link
             to="/ninjas"
             className="rounded border border-border-strong px-5 py-3 text-sm text-fog-300 transition-colors hover:bg-surface-2"

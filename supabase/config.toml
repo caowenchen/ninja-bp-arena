@@ -1,0 +1,12 @@
+# Supabase 本地开发配置（supabase start 后可用）
+# 生产部署：supabase link --project-ref <ref> && supabase db push && supabase functions deploy
+project_id = "ninja-bp-arena"
+
+[functions.room-command]
+verify_jwt = true
+
+[functions.room-create]
+verify_jwt = true
+
+[functions.room-join]
+verify_jwt = true

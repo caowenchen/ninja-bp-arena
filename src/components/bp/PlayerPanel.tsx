@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Radio } from 'lucide-react'
 import type { Side } from '@/types/bp'
-import { useBPStore } from '@/store/bpStore'
+import { useMatchSource } from '@/matchSource/context'
 import { getPhase } from '@/engine/bpEngine'
 import { useNinjaStore } from '@/store/ninjaStore'
 import { BanSlot } from './BanSlot'
@@ -19,7 +19,8 @@ interface PlayerPanelProps {
  * 槽位数量由当前局的规则序列推导；名字直接可见，不只显示 P1/P2/P3。
  */
 export function PlayerPanel({ side }: PlayerPanelProps) {
-  const match = useBPStore((s) => s.match)
+  const source = useMatchSource()
+  const match = source.match
   const ninjaById = useNinjaStore((s) => s.getById)
 
   const { bans, picks, hasBanPhase, acting } = useMemo(() => {

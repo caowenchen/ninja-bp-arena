@@ -1,24 +1,27 @@
 import type { MatchState } from '@/types/match'
-import { useBPStore } from '@/store/bpStore'
 import { getPhase } from '@/engine/bpEngine'
+import { useMatchSource } from '@/matchSource/context'
 import { SIDE_TEXT } from '@/types/bp'
+import { toast } from '@/store/toastStore'
 
 interface BPControlBarProps {
   match: MatchState
   onOpenHistory: () => void
 }
 
-/** 底部操作栏：移动端 sticky（含 safe-area），桌面为页尾操作区 */
+/** 底部操作栏：移动端 sticky（含 safe-area），桌面为页尾操作区。本地/在线共用 */
 export function BPControlBar({ match, onOpenHistory }: BPControlBarProps) {
-  const undo = useBPStore((s) => s.undo)
-  const redo = useBPStore((s) => s.redo)
-  const canUndo = useBPStore((s) => s.canUndo())
-  const canRedo = useBPStore((s) => s.canRedo())
+  const source = useMatchSource()
   const phase = getPhase(match)
+  const isOnline = source.mode === 'online'
 
   const phaseHint =
     phase.status === 'BANNING' || phase.status === 'PICKING'
-      ? `${SIDE_TEXT[phase.side!]}${phase.action === 'BAN' ? '禁用' : '选择'}中`
+      ? isOnline
+        ? source.isMyTurn
+          ? '轮到你'
+          : '等待对方'
+        : `${SIDE_TEXT[phase.side!]}${phase.action === 'BAN' ? '禁用' : '选择'}中`
       : phase.status === 'READY'
         ? '阵容已锁定'
         : phase.status === 'PLAYING'
@@ -36,10 +39,10 @@ export function BPControlBar({ match, onOpenHistory }: BPControlBarProps) {
       <div className="mx-auto flex w-full max-w-[1500px] items-center gap-2 px-2.5 py-1.5 lg:px-5">
         <span
           className={`truncate text-xs font-medium lg:hidden ${
-            phase.status === 'BANNING'
-              ? 'text-red-team-soft'
-              : phase.status === 'PICKING'
-                ? 'text-blue-team-soft'
+            phase.status === 'PICKING' || (isOnline && source.isMyTurn)
+              ? 'text-blue-team-soft'
+              : phase.status === 'BANNING'
+                ? 'text-red-team-soft'
                 : 'text-fog-500'
           }`}
         >
@@ -50,12 +53,33 @@ export function BPControlBar({ match, onOpenHistory }: BPControlBarProps) {
           <button type="button" onClick={onOpenHistory} className={btn}>
             历史
           </button>
-          <button type="button" onClick={() => undo()} disabled={!canUndo} className={btn}>
-            撤销
+          <button
+            type="button"
+            onClick={() => {
+              void Promise.resolve(source.undo()).then((r) => {
+                if (!r.ok && r.reason) toast(r.reason)
+              })
+            }}
+            disabled={!source.canUndo || (isOnline && !!source.pendingUndo)}
+            className={btn}
+            title={isOnline ? '发送撤销请求（需对方确认）' : '撤销（Ctrl+Z）'}
+          >
+            {isOnline ? '申请撤销' : '撤销'}
           </button>
-          <button type="button" onClick={() => redo()} disabled={!canRedo} className={btn}>
-            重做
-          </button>
+          {!isOnline && (
+            <button
+              type="button"
+              onClick={() => {
+                void Promise.resolve(source.redo()).then((r) => {
+                  if (!r.ok && r.reason) toast(r.reason)
+                })
+              }}
+              disabled={!source.canRedo}
+              className={`${btn} hidden sm:block`}
+            >
+              重做
+            </button>
+          )}
         </div>
       </div>
     </div>

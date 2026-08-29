@@ -1,7 +1,7 @@
 {
   "name": "ninja-bp-arena",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "忍界 BP · 火影忍者手游武斗赛 BP 模拟器（玩家制作的非官方工具）",
   "scripts": {
@@ -16,6 +16,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
     "lucide-react": "^0.539.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

@@ -45,6 +45,8 @@ interface BPStageProps {
   onResumeTimeout: () => void
   onRestartTimer: () => void
   onTimerExpire: () => void
+  /** 在线模式：服务端权威 deadline（本地为 undefined → 用 timerStore） */
+  deadlineOverride?: number | null
   className?: string
 }
 
@@ -58,6 +60,7 @@ export function BPStage({
   onResumeTimeout,
   onRestartTimer,
   onTimerExpire,
+  deadlineOverride,
   className = '',
 }: BPStageProps) {
   const phase = getPhase(match)
@@ -92,6 +95,7 @@ export function BPStage({
               seconds={rule.timerSeconds}
               running={inBP}
               onExpire={onTimerExpire}
+              deadlineOverride={deadlineOverride}
             />
             <div className="text-left">
               <p

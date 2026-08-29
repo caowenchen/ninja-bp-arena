@@ -6,18 +6,23 @@ interface CountdownTimerProps {
   running: boolean
   onExpire: () => void
   className?: string
+  /** 在线模式：服务端权威 deadline（提供时优先于本地 timerStore） */
+  deadlineOverride?: number | null
 }
 
 /**
  * 倒计时展示组件。
  *
- * 时间源是 timerStore 里持久化的 deadlineAt 时间戳：
- * - 剩余秒数 = ceil((deadlineAt - now) / 1000)，刷新页面后恢复真实剩余时间
- * - deadline 已过 → 剩余 0 并触发 onExpire（进入 TIMEOUT，不自动代选）
- * - 每 500ms 的本地 tick 只发生在本组件内部，不会带动忍者池重渲染
+ * 时间源：
+ * - 本地模式：timerStore 里持久化的 deadlineAt 时间戳
+ * - 在线模式：服务端权威 deadline（deadlineOverride）
+ * 剩余秒数 = ceil((deadline - now) / 1000)，刷新页面后恢复真实剩余时间；
+ * deadline 已过 → 剩余 0 并触发 onExpire（进入 TIMEOUT，不自动代选）；
+ * 每 500ms 的本地 tick 只发生在本组件内部，不会带动忍者池重渲染。
  */
-export function CountdownTimer({ seconds, running, onExpire, className = '' }: CountdownTimerProps) {
-  const deadlineAt = useTimerStore((s) => s.deadlineAt)
+export function CountdownTimer({ seconds, running, onExpire, className = '', deadlineOverride }: CountdownTimerProps) {
+  const storeDeadline = useTimerStore((s) => s.deadlineAt)
+  const deadlineAt = deadlineOverride !== undefined ? deadlineOverride : storeDeadline
   const [now, setNow] = useState(() => Date.now())
   const expiredRef = useRef(false)
 

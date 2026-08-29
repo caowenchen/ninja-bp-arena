@@ -165,3 +165,64 @@ interface BattleRule {
 1. 双人实时 BP 房间（房间号 / 实时同步 / OB 观战页）
 2. 真实忍者数据与素材管理
 3. 秘卷 / 通灵 BP
+
+## 在线 BP 设置（v0.3.0，可选）
+
+本地 BP 仍然完全离线可用。双人实时 BP 房间基于 Supabase（Postgres + Realtime + Edge Functions + Anonymous Auth）。
+
+### 1. 创建 Supabase 项目并开启匿名登录
+
+1. 在 [supabase.com](https://supabase.com) 创建项目
+2. Dashboard → Authentication → Sign In / Up → 勾选 **Anonymous sign-ins**
+
+### 2. 运行数据库迁移（结构可版本控制、可复现）
+
+```bash
+npm i -g supabase          # 或 scoop/brew 安装 Supabase CLI
+supabase login
+supabase link --project-ref <你的项目 ref>
+supabase db push           # 应用 supabase/migrations/ 下的全部迁移
+```
+
+迁移内容：`rooms` / `room_members` / `room_commands` 三张表、唯一索引（房间码、席位唯一）、
+RLS 策略（成员可读、本人席位写入、客户端禁止修改 match_state）、Realtime publication。
+
+本地开发可用 `supabase start`（本地栈），不要把生产库用于自动化测试。
+
+### 3. 部署 Edge Functions
+
+```bash
+supabase functions deploy room-create
+supabase functions deploy room-join
+supabase functions deploy room-command
+```
+
+三个函数共用 `shared/bp-core`（与浏览器完全同一套 BP 逻辑），服务端权威：
+验证回合与席位、执行 BP 规则、以 revision CAS 写回状态（commandId 幂等）。
+
+### 4. 配置前端环境变量
+
+```bash
+cp .env.example .env.local
+# 填入：
+# VITE_SUPABASE_URL=https://<ref>.supabase.co
+# VITE_SUPABASE_PUBLISHABLE_KEY=<Publishable / anon key>
+```
+
+GitHub Pages 部署：在仓库 Settings → Secrets and variables → Actions → **Variables** 中
+配置同名两个变量（均为前端公开凭据；SERVICE ROLE 绝不能进 CI/Pages）。
+
+### 5. 安全模型速览
+
+- 客户端只能发送语义命令（`SELECT_NINJA` / `SET_GAME_WINNER` / `REQUEST_UNDO`…），
+  Side 一律由服务端按 `room_members` + BP 引擎阶段推导，不信任客户端
+- `rooms.match_state` 客户端不可写（RLS 无 UPDATE 策略），唯一写入口是 `room-command`
+  （service role，密钥只在 Deno.env）
+- 所有状态更新带 `revision` 乐观锁；重复 `commandId` 幂等；房间 24h 过期
+- Realtime 走 RLS 保护的 postgres_changes，非成员收不到事件；Presence 仅展示在线状态
+
+### 6. 已知限制
+
+- 双方需要使用同一份忍者池 JSON（房间固化创建者的池子做服务端校验；名字显示取自各自本地池）
+- 在线模式的撤销 = 撤销最后一步 Ban/Pick，且需对方确认（本地模式撤销能力更强）
+- 胜负记录/进入下一局/重置 仅房主可执行（防双提交），后续可加双方确认

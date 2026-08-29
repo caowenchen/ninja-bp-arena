@@ -17,7 +17,9 @@ export default function AboutPage() {
       <div className="mt-6 space-y-5 text-sm leading-relaxed text-fog-300">
         <p>
           一款纯前端的《火影忍者手游》武斗赛 Ban/Pick 模拟器：完整 BO3 流程、配置化规则、
-          撤销与复盘、忍者池管理。所有数据保存在浏览器本地（localStorage），无需登录、无服务器。
+          撤销与复盘、忍者池管理。本地模式数据保存在浏览器（localStorage），完全离线可用；
+          在线 BP 房间基于 Supabase（Anonymous Auth + 服务端权威状态 + Realtime 同步），
+          需要部署方自行配置 Supabase 项目。
         </p>
 
         <p className="rounded border border-gold-accent/30 bg-gold-accent/5 p-3 text-xs text-gold-accent">

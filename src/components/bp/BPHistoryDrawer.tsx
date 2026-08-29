@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { X } from 'lucide-react'
-import { useBPStore } from '@/store/bpStore'
+import { useMatchSource } from '@/matchSource/context'
 import { useNinjaStore } from '@/store/ninjaStore'
 import { groupHistoryByGame } from '@/engine/historyEngine'
 import { formatTime } from '@/utils/format'
@@ -11,9 +11,9 @@ interface BPHistoryDrawerProps {
   onClose: () => void
 }
 
-/** BP 历史记录抽屉：按 Game 分组的完整操作流水 */
+/** BP 历史记录抽屉：按 Game 分组的完整操作流水（本地 / 在线共用） */
 export function BPHistoryDrawer({ open, onClose }: BPHistoryDrawerProps) {
-  const match = useBPStore((s) => s.match)
+  const match = useMatchSource().match
   const nameOf = useNinjaStore((s) => s.nameOf)
   const groups = useMemo(() => (match ? groupHistoryByGame(match) : []), [match])
 
