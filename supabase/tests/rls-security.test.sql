@@ -120,6 +120,7 @@ begin
     json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
   insert into public.rooms (code, host_user_id, status, match_state, pool)
   values ('HACK99', u_host, 'WAITING', '{"x":1}'::jsonb, '[]'::jsonb);
+  raise warning 'PGTAP-FAIL: %', 客户端不能 INSERT rooms;
   perform ok(false, '客户端不能 INSERT rooms');
 exception when others then
   perform ok(true, '客户端不能 INSERT rooms（' || SQLERRM || '）');
@@ -135,6 +136,7 @@ begin
     json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
   insert into public.room_commands (command_id, room_id, command_type, status)
   values (gen_random_uuid(), v_room, 'SELECT_NINJA', 'APPLIED');
+  raise warning 'PGTAP-FAIL: %', 客户端不能 INSERT room_commands;
   perform ok(false, '客户端不能 INSERT room_commands');
 exception when others then
   perform ok(true, '客户端不能 INSERT room_commands（' || SQLERRM || '）');
