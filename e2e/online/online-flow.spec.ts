@@ -53,8 +53,6 @@ async function clickButton(page: Page, text: string) {
   await page.getByRole('button', { name: text, exact: true }).click()
 }
 
-const GAME2 = ['干柿鬼鲛', '油女志乃', '药师兜', '静音', '李洛克', '天天']
-const GAME3 = ['奈良鹿丸', '秋道丁次', '山中井野', '犬冢牙', '飞段', '角都']
 
 test.describe.serial('在线 BO3 全流程', () => {
   let ctxBlue: BrowserContext
