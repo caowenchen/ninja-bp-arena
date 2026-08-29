@@ -111,6 +111,19 @@ export default function RoomPage() {
     )
   }
 
+  if (phase === 'in-room' && roomStatus === 'CLOSED') {
+    return (
+      <div className="px-4 py-20 text-center">
+        <DoorClosed size={30} className="mx-auto text-fog-600" />
+        <p className="mt-3 text-sm font-semibold text-fog-100">房间已关闭</p>
+        <p className="mt-1 text-xs text-fog-600">房主已结束该房间，感谢使用。</p>
+        <Link to="/online" className="mt-4 inline-block rounded bg-blue-team px-4 py-2 text-xs font-bold text-white">
+          返回在线 BP
+        </Link>
+      </div>
+    )
+  }
+
   if (phase === 'in-room' && roomStatus === 'WAITING') {
     return <WaitingRoom code={roomCode ?? roomCodeUpper} />
   }
