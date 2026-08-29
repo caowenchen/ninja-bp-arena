@@ -20,6 +20,12 @@ revoke all on schema private from public;
 revoke all on schema private from anon;
 revoke all on schema private from authenticated;
 
+-- service_role（Edge Function）与 postgres（测试/运维）需要 USAGE 才能调用函数；
+-- authenticated 需要 USAGE 才能让 RLS 策略调用 is_room_member
+grant usage on schema private to service_role;
+grant usage on schema private to postgres;
+grant usage on schema private to authenticated;
+
 -- ---------------------------------------------------------------------------
 -- rooms：权威 MatchState 的唯一存放处
 -- ---------------------------------------------------------------------------
