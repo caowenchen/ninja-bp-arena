@@ -79,7 +79,7 @@ jobs:
         run: supabase db reset
 
       - name: 数据库安全测试（RLS attack / 权限）
-        run: supabase test db
+        run: npm run test:db
 
       - name: 读取本地密钥并配置 Functions 环境
         run: |
