@@ -100,19 +100,23 @@ begin
     perform ok(true, '客户端不能 INSERT room_commands');
   end;
 
-  -- 9 CAS RPC：EXECUTE 已从 authenticated 收回
-  perform tests_as_user(u_host);
-  begin
-    perform private.apply_room_state_cas(
-      v_room, 1, gen_random_uuid(), u_host, 'SELECT_NINJA', null,
-      '{"demo":1}'::jsonb, 'ACTIVE', null
-    );
-    perform ok(false, '普通用户不能执行 CAS RPC');
-  exception when insufficient_privilege then
-    perform ok(true, '普通用户不能执行 CAS RPC');
-  when others then
-    perform ok(true, '普通用户不能执行 CAS RPC');
-  end;
+  -- 9 CAS RPC：EXECUTE 已从 authenticated 收回（用权限元数据检查，不实际调用）
+  perform ok(
+    has_function_privilege(
+      'authenticated',
+      'private.apply_room_state_cas(uuid,bigint,uuid,uuid,text,jsonb,jsonb,text,jsonb)',
+      'EXECUTE'
+    ) = false,
+    '普通用户不能执行 CAS RPC'
+  );
+  perform ok(
+    has_function_privilege(
+      'service_role',
+      'private.apply_room_state_cas(uuid,bigint,uuid,uuid,text,jsonb,jsonb,text,jsonb)',
+      'EXECUTE'
+    ),
+    'service_role 可以执行 CAS RPC'
+  );
 end $$;
 
 select * from finish();
