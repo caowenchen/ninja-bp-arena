@@ -37,6 +37,12 @@ async function clickNinja(page: Page, name: string) {
   await expect(page.getByRole('button', { name: new RegExp(`^${name}（可选）`) })).toHaveCount(0, { timeout: 20000 })
 }
 
+/** 故意点错方的原始点击：不等待状态变化，仅断言拒绝 Toast */
+async function clickNinjaWrongTurn(page: Page, name: string) {
+  await page.getByRole('button', { name: new RegExp(`^${name}（可选）`) }).click()
+  await expect(page.locator('body')).toContainText('等待对方选择……', { timeout: 10000 })
+}
+
 async function clickButton(page: Page, text: string) {
   await page.getByRole('button', { name: text, exact: true }).click()
 }
@@ -82,8 +88,7 @@ test.describe.serial('在线 BO3 全流程', () => {
   })
 
   test('回合权限：红方在蓝方回合被拒，蓝方正常 Ban', async () => {
-    await clickNinja(red, '漩涡鸣人')
-    await expect(red.locator('body')).toContainText('等待对方选择')
+    await clickNinjaWrongTurn(red, '漩涡鸣人')
     await clickNinja(blue, '漩涡鸣人')
     await expect(blue.getByRole('button', { name: /漩涡鸣人（已禁用）/ })).toBeVisible({ timeout: 15000 })
     // 三端实时同步
