@@ -298,3 +298,8 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
 
   clearError: () => set({ lastError: null }),
 }))
+
+// E2E 调试用：DEV 构建下暴露 store（生产构建不含）
+if (import.meta.env.DEV) {
+  ;(window as unknown as Record<string, unknown>).__nja = useOnlineRoomStore
+}

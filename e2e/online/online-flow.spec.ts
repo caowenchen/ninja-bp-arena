@@ -40,13 +40,29 @@ async function clickNinja(page: Page, name: string) {
     await card.click()
     await page.waitForTimeout(1000)
     if ((await card.count()) > 0) {
-      const toasts = await page.evaluate(() =>
-        [...document.querySelectorAll('button')]
+      const toasts = await page.evaluate(() => {
+        const st = (window as unknown as { __nja?: { getState: () => Record<string, unknown> } }).__nja?.getState()
+        const m = st?.match as { currentGame?: number } | null
+        const phase = m
+          ? (() => {
+              const g = m as unknown as {
+                games: { blue: { bans: string[]; picks: string[] }; red: { bans: string[]; picks: string[] } }[]
+                currentGame: number
+              }
+              const cur = g.games[g.games.length - 1]
+              return `G${g.currentGame} 蓝(B${cur.blue.bans.length}/P${cur.blue.picks.length}) 红(B${cur.red.bans.length}/P${cur.red.picks.length})`
+            })()
+          : 'no-match'
+        const banners = [...document.querySelectorAll('main div, main p')]
+          .map((d) => d.textContent)
+          .filter((t) => t && (t.includes('轮到你操作') || t.includes('等待对方选择')))
+        const toasts = [...document.querySelectorAll('button')]
           .filter((b) => b.className.includes('pointer-events-auto'))
           .map((b) => b.textContent)
-          .join(' | '),
-      )
-      throw new Error(`${name} 尚未确认，重试。Toast: ${toasts || '无'}`)
+          .join(' | ')
+        return `state=${phase} banner=${banners.join('/')} toast=${toasts || '无'}`
+      })
+      throw new Error(`${name} 尚未确认，重试。${toasts}`)
     }
   }).toPass({ timeout: 45000 })
 }
