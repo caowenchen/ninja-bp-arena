@@ -263,7 +263,7 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
     case 'CLOSE_ROOM': {
       // Host 关闭房间：任何状态都可以关闭（需二次确认在客户端完成）
       if (!ctx.isHost) return reject('NOT_HOST', '只有房主可以关闭房间')
-      return { match }
+      return { match, extra: 'CLOSED' }
     }
 
     default:

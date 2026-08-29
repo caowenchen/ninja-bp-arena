@@ -411,6 +411,22 @@ describe('在线命令：RESTART_TIMER 与服务器计时器', () => {
   })
 })
 
+describe('在线命令：CLOSE_ROOM', () => {
+  it('房主可关闭房间（状态 → CLOSED）；其他玩家与观战者被拒', () => {
+    const { ctx } = activeContext({ isHost: true, mySeat: 'BLUE', myUserId: HOST })
+    const out = applyRoomCommand(ctx, cmd('CLOSE_ROOM', 12))
+    expect(out.status).toBe('APPLIED')
+    if (out.status !== 'APPLIED') return
+    expect(out.roomStatus).toBe('CLOSED')
+
+    const notHost = activeContext({ isHost: false, mySeat: 'RED' }).ctx
+    expect(applyRoomCommand(notHost, cmd('CLOSE_ROOM', 12))).toMatchObject({ status: 'REJECTED', code: 'NOT_HOST' })
+
+    const observer = activeContext({ isHost: false, mySeat: 'OBSERVER' })
+    expect(applyRoomCommand(observer, cmd('CLOSE_ROOM', 12))).toMatchObject({ status: 'REJECTED', code: 'NOT_HOST' })
+  })
+})
+
 describe('在线命令：席位与身份', () => {
   it('未加入房间的用户被拒绝 NOT_MEMBER', () => {
     const { ctx } = activeContext({ mySeat: null })
