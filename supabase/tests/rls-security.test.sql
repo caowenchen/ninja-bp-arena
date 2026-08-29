@@ -11,6 +11,15 @@ create extension if not exists pgtap;
 begin;
 select plan(10);
 
+-- 报告包装：diag 输出每次断言结果（pg_prove 的 # 注释行会显示在日志里）
+create or replace function test_check(p_pass boolean, p_name text) returns void
+language plpgsql as $fn$
+begin
+  perform diag(p_name || ' => ' || case when p_pass then 'PASS' else 'FAIL' end);
+  perform ok(p_pass, p_name);
+end;
+$fn$;
+
 -- 1 前置数据：service role 建房间与成员（与 Edge Function 同路径，事务 RPC）
 do $setup$
 declare
@@ -27,7 +36,7 @@ begin
     (select id from public.rooms order by created_at desc limit 1),
     u_red, 'RED', '红方'
   );
-  perform ok(true, '前置数据就绪');
+  perform test_check(true, '前置数据就绪');
 exception when others then
   raise warning 'PGTAP-FAIL SETUP: %', SQLERRM;
   perform ok(false, '前置数据失败: ' || SQLERRM);
@@ -43,7 +52,7 @@ begin
   perform set_config('request.jwt.claims',
     json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
   select id into v_room from public.rooms limit 1;
-  perform ok(v_room is not null, '成员可以读取自己所在房间');
+  perform test_check(v_room is not null, '成员可以读取自己所在房间');
 exception when others then
   raise warning 'PGTAP-FAIL T1: %', SQLERRM;
   perform ok(false, '用例2异常: ' || SQLERRM);
@@ -57,7 +66,7 @@ begin
   perform set_config('request.jwt.claims',
     json_build_object('sub', gen_random_uuid()::text, 'role', 'authenticated')::text, true);
   select id into v_room from public.rooms limit 1;
-  perform ok(v_room is null, '非成员不能读取房间');
+  perform test_check(v_room is null, '非成员不能读取房间');
 exception when others then
   raise warning 'PGTAP-FAIL T2: %', SQLERRM;
   perform ok(false, '用例3异常: ' || SQLERRM);
@@ -75,7 +84,7 @@ begin
     json_build_object('sub', u_red::text, 'role', 'authenticated')::text, true);
   select id into v_room from public.rooms limit 1;
   select count(*) into n from public.room_members where room_id = v_room;
-  perform ok(n >= 2, '成员可以读取花名册');
+  perform test_check(n >= 2, '成员可以读取花名册');
 exception when others then
   raise warning 'PGTAP-FAIL T3: %', SQLERRM;
   perform ok(false, '用例4异常: ' || SQLERRM);
@@ -91,7 +100,7 @@ begin
     json_build_object('sub', gen_random_uuid()::text, 'role', 'authenticated')::text, true);
   select id into v_room from public.rooms limit 1;
   select count(*) into n from public.room_members where room_id = coalesce(v_room, gen_random_uuid());
-  perform ok(n = 0, '非成员不能读取花名册');
+  perform test_check(n = 0, '非成员不能读取花名册');
 exception when others then
   raise warning 'PGTAP-FAIL T4: %', SQLERRM;
   perform ok(false, '用例5异常: ' || SQLERRM);
@@ -108,7 +117,7 @@ begin
     json_build_object('sub', u_red::text, 'role', 'authenticated')::text, true);
   select id into v_room from public.rooms limit 1;
   update public.room_members set seat = 'BLUE' where room_id = v_room and user_id = u_red;
-  perform ok(not found, 'RED 不能直接 UPDATE seat');
+  perform test_check(not found, 'RED 不能直接 UPDATE seat');
 exception when others then
   perform ok(true, 'RED 不能直接 UPDATE seat（' || SQLERRM || '）');
 end $t5$;
@@ -124,7 +133,7 @@ begin
     json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
   select id into v_room from public.rooms limit 1;
   update public.rooms set match_state = '{"hacked": true}'::jsonb where id = v_room;
-  perform ok(not found, '客户端不能 UPDATE rooms.match_state');
+  perform test_check(not found, '客户端不能 UPDATE rooms.match_state');
 exception when others then
   perform ok(true, '客户端不能 UPDATE rooms.match_state（' || SQLERRM || '）');
 end $t6$;
@@ -139,7 +148,7 @@ begin
     json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
   insert into public.rooms (code, host_user_id, status, match_state, pool)
   values ('HACK99', u_host, 'WAITING', '{"x":1}'::jsonb, '[]'::jsonb);
-  perform ok(false, '客户端居然能 INSERT rooms');
+  perform test_check(false, '客户端居然能 INSERT rooms');
 exception when others then
   perform ok(true, '客户端不能 INSERT rooms（' || SQLERRM || '）');
 end $t7$;
@@ -156,7 +165,7 @@ begin
   select id into v_room from public.rooms limit 1;
   insert into public.room_commands (command_id, room_id, command_type, status)
   values (gen_random_uuid(), v_room, 'SELECT_NINJA', 'APPLIED');
-  perform ok(false, '客户端居然能 INSERT room_commands');
+  perform test_check(false, '客户端居然能 INSERT room_commands');
 exception when others then
   perform ok(true, '客户端不能 INSERT room_commands（' || SQLERRM || '）');
 end $t8$;
@@ -164,8 +173,7 @@ end $t8$;
 -- 10 CAS RPC：EXECUTE 只授予 service_role（权限元数据检查，不实际调用）
 do $t9$
 begin
-  perform ok(
-    has_function_privilege(
+  perform test_check(has_function_privilege(
       'authenticated',
       'private.apply_room_state_cas(uuid,bigint,uuid,uuid,text,jsonb,jsonb,text,jsonb)',
       'EXECUTE'
@@ -174,9 +182,7 @@ begin
       'service_role',
       'private.apply_room_state_cas(uuid,bigint,uuid,uuid,text,jsonb,jsonb,text,jsonb)',
       'EXECUTE'
-    ),
-    'CAS RPC 仅 service_role 可执行'
-  );
+    ), 'CAS RPC 仅 service_role 可执行');
 exception when others then
   raise warning 'PGTAP-FAIL T9: %', SQLERRM;
   perform ok(false, '用例10异常: ' || SQLERRM);
