@@ -1,4 +1,4 @@
-import type { MatchState, OnlineCommandType, PendingUndo, RoomStatus, Seat } from '@/shared/bp-core'
+import type { MatchState, OnlineCommandType, PendingUndo, RoomStatus, Seat } from '@bp-core'
 
 /** 客户端在线模式的类型（与 Shared BP Core / 数据库结构对应） */
 

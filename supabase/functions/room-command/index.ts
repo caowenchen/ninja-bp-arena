@@ -1,22 +1,29 @@
 import { json, handleOptions } from '../_shared/http.ts'
 import { serviceClient, getUserFromRequest } from '../_shared/supabase.ts'
-import { applyRoomCommand, validateMatchState, type OnlineCommandType, type PendingUndo, type RoomStatus } from '../../shared/bp-core/index.ts'
+import {
+  applyRoomCommand,
+  validateMatchState,
+  type OnlineCommandType,
+  type PendingUndo,
+  type RoomStatus,
+  type Seat,
+  type SeatMember,
+} from '../_shared/bp-core/index.ts'
 
 /**
- * POST /functions/v1/room-command
- * 在线 BP 的唯一写入口：客户端发送语义命令，服务端运行 Shared BP Core
- * 生成新状态并以 revision CAS 写回数据库（禁止 Lost Update）。
+ * POST /functions/v1/room-command —— 在线 BP 的唯一写入口。
  *
- * body: { roomId: string, commandId: string, expectedRevision: number,
- *         type: OnlineCommandType, payload?: { ninjaId?: string; side?: string } }
+ * 流程：JWT → 用户 → 幂等检查 → 房间/成员/席位 → Shared BP Core 验证并应用
+ *       → private.apply_room_state_cas（revision CAS + 审计，同一事务）。
  *
  * 响应：
  * - 200 { status:'APPLIED', match, revision, roomStatus, pendingUndo }
- * - 400 { status:'REJECTED', code, message, revision, match }（业务拒绝）
- * - 409 { error:'REVISION_CONFLICT', match, revision }（客户端状态过期 → resync）
+ * - 400 { status:'REJECTED', code, message, revision, match }
+ * - 409 { error:'REVISION_CONFLICT', message, match, revision }
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const MAX_BODY_BYTES = 8 * 1024
 
 interface RoomRow {
   id: string
@@ -27,12 +34,13 @@ interface RoomRow {
   pending_action: unknown
   expires_at: string
   pool: { id: string; enabled: boolean }[]
+  host_user_id: string
 }
 
 async function loadRoom(admin: ReturnType<typeof serviceClient>, roomId: string): Promise<RoomRow | null> {
   const { data, error } = await admin
     .from('rooms')
-    .select('id, code, status, match_state, revision, pending_action, expires_at, pool')
+    .select('id, code, status, match_state, revision, pending_action, expires_at, pool, host_user_id')
     .eq('id', roomId)
     .maybeSingle()
   if (error) throw new Error(error.message)
@@ -48,27 +56,28 @@ Deno.serve(async (req) => {
     const user = await getUserFromRequest(admin, req)
     if (!user) return json({ error: 'NOT_AUTHENTICATED', message: '登录状态失效，请刷新页面' }, 401)
 
-    // 命令体大小限制：BP 命令都很小，超大 JSON 直接拒绝
     const rawBody = await req.text()
-    if (rawBody.length > 8192) return json({ error: 'PAYLOAD_TOO_LARGE', message: '命令体积超出限制' }, 413)
+    if (rawBody.length > MAX_BODY_BYTES) return json({ error: 'PAYLOAD_TOO_LARGE', message: '命令体积超出限制' }, 413)
     const body = JSON.parse(rawBody) as {
-      roomId?: string
-      commandId?: string
-      expectedRevision?: number
-      type?: OnlineCommandType
-      payload?: { ninjaId?: string; side?: string }
+      roomId?: unknown
+      commandId?: unknown
+      expectedRevision?: unknown
+      type?: unknown
+      payload?: { ninjaId?: unknown; side?: unknown }
     }
 
-    const { roomId, commandId, type } = body
+    const roomId = typeof body.roomId === 'string' ? body.roomId : ''
+    const commandId = typeof body.commandId === 'string' ? body.commandId : ''
     const expectedRevision = Number(body.expectedRevision)
-    if (!roomId || !UUID_RE.test(roomId)) return json({ error: 'INVALID_COMMAND', message: 'roomId 非法' }, 400)
-    if (!commandId || !UUID_RE.test(commandId)) return json({ error: 'INVALID_COMMAND', message: 'commandId 非法' }, 400)
-    if (typeof type !== 'string') return json({ error: 'INVALID_COMMAND', message: '缺少命令类型' }, 400)
+    const type = typeof body.type === 'string' ? (body.type as OnlineCommandType) : null
+    if (!UUID_RE.test(roomId)) return json({ error: 'INVALID_COMMAND', message: 'roomId 非法' }, 400)
+    if (!UUID_RE.test(commandId)) return json({ error: 'INVALID_COMMAND', message: 'commandId 非法' }, 400)
+    if (!type) return json({ error: 'INVALID_COMMAND', message: '缺少命令类型' }, 400)
 
-    // ---- 幂等：同一 commandId 只执行一次（网络重试不产生重复动作）----
+    // ---- 幂等：同一 commandId 只执行一次 ----
     const { data: previous } = await admin
       .from('room_commands')
-      .select('status, applied_revision, reject_code, payload, command_type')
+      .select('status, reject_code')
       .eq('command_id', commandId)
       .maybeSingle()
     if (previous) {
@@ -95,39 +104,40 @@ Deno.serve(async (req) => {
 
     const { data: member } = await admin
       .from('room_members')
-      .select('seat, user_id')
+      .select('seat')
       .eq('room_id', roomId)
       .eq('user_id', user.id)
       .maybeSingle()
 
-    const seatUserIds: { BLUE: string | null; RED: string | null } = { BLUE: null, RED: null }
+    const seatMembers: { BLUE: SeatMember | null; RED: SeatMember | null } = { BLUE: null, RED: null }
     const { data: seated } = await admin
       .from('room_members')
-      .select('seat, user_id')
+      .select('user_id, seat, display_name')
       .eq('room_id', roomId)
       .in('seat', ['BLUE', 'RED'])
     for (const m of seated ?? []) {
-      if (m.seat === 'BLUE') seatUserIds.BLUE = m.user_id as string
-      if (m.seat === 'RED') seatUserIds.RED = m.user_id as string
+      if (m.seat === 'BLUE') {
+        seatMembers.BLUE = { userId: m.user_id as string, displayName: m.display_name as string }
+      } else if (m.seat === 'RED') {
+        seatMembers.RED = { userId: m.user_id as string, displayName: m.display_name as string }
+      }
     }
 
-    // ---- 忍者池：房间创建时固化的快照，服务端据此校验忍者存在与启用 ----
-    const ninjas: { id: string; enabled: boolean }[] = Array.isArray(room.pool) ? room.pool : []
-
-    // ---- 运行 Shared BP Core（与服务端同一套规则）----
+    // ---- 运行 Shared BP Core（与浏览器同一套规则；Side 由阶段推导，不信任客户端）----
     const outcome = applyRoomCommand(
       {
         match: room.match_state as never,
         revision: room.revision,
         roomStatus: room.status,
         expiresAt: new Date(room.expires_at).getTime(),
-        mySeat: (member?.seat as 'BLUE' | 'RED' | 'OBSERVER' | undefined) ?? null,
-        isHost: room && (member?.user_id ?? user.id) === room.host_user_id && user.id === room.host_user_id,
+        mySeat: (member?.seat as Seat | undefined) ?? null,
+        // 真正身份 = JWT user.id，绝不使用请求体传入的任何身份
+        isHost: user.id === room.host_user_id,
         myUserId: user.id,
-        hostUserId: room.host_user_id as string,
-        seatUserIds,
+        hostUserId: room.host_user_id,
+        seatMembers,
         pendingUndo: (room.pending_action as PendingUndo | null) ?? null,
-        ninjas: ninjas as never,
+        ninjas: Array.isArray(room.pool) ? room.pool : [],
         now: Date.now(),
       },
       {
@@ -135,7 +145,14 @@ Deno.serve(async (req) => {
         roomId,
         expectedRevision,
         type,
-        payload: body.payload,
+        payload: {
+          ninjaId: typeof body.payload?.ninjaId === 'string' ? body.payload.ninjaId : undefined,
+          // side 由服务端按阶段推导；此处仅透传（handler 不信任它）
+          side:
+            body.payload?.side === 'BLUE' || body.payload?.side === 'RED'
+              ? (body.payload.side as 'BLUE' | 'RED')
+              : undefined,
+        },
       },
     )
 
@@ -156,44 +173,49 @@ Deno.serve(async (req) => {
       )
     }
 
-    // ---- APPLIED：状态合法性兜底 + revision CAS 写回（禁止 Lost Update）----
+    // ---- APPLIED：状态合法性兜底 + 事务化（CAS + 审计）写入 ----
     if (!validateMatchState(outcome.match)) {
       return json({ error: 'INTERNAL', message: '生成的比赛状态未通过校验，已中止写入' }, 500)
     }
 
-    const { data: updated, error: updateError } = await admin
-      .from('rooms')
-      .update({
-        match_state: outcome.match,
-        revision: outcome.revision,
-        status: outcome.roomStatus,
-        pending_action: outcome.pendingUndo,
-      })
-      .eq('id', roomId)
-      .eq('revision', room.revision) // CAS：不是预期版本说明有并发更新
-      .select('revision')
-      .single()
-
-    if (updateError || !updated) {
-      const fresh = await loadRoom(admin, roomId)
-      return json(
-        { error: 'REVISION_CONFLICT', message: '比赛状态已更新，正在同步', match: fresh?.match_state, revision: fresh?.revision ?? 0 },
-        409,
-      )
+    const { data: casResult, error: casError } = await admin.rpc('apply_room_state_cas', {
+      p_room_id: roomId,
+      p_expected_revision: room.revision,
+      p_command_id: commandId,
+      p_user_id: user.id,
+      p_command_type: type,
+      p_payload: body.payload ?? null,
+      p_next_match_state: outcome.match,
+      p_next_status: outcome.roomStatus,
+      p_next_pending_action: outcome.pendingUndo,
+    })
+    if (casError) {
+      // REVISION_CONFLICT 由 RPC 抛出并整体回滚
+      if (casError.message.includes('REVISION_CONFLICT')) {
+        const fresh = await loadRoom(admin, roomId)
+        return json(
+          { error: 'REVISION_CONFLICT', message: '比赛状态已更新，正在同步', match: fresh?.match_state, revision: fresh?.revision ?? 0 },
+          409,
+        )
+      }
+      return json({ error: 'DB_ERROR', message: casError.message }, 500)
     }
 
-    await admin.from('room_commands').insert({
-      command_id: commandId,
-      room_id: roomId,
-      user_id: user.id,
-      command_type: type,
-      expected_revision: expectedRevision,
-      applied_revision: outcome.revision,
-      payload: body.payload ?? null,
-      status: 'APPLIED',
-    })
+    const newRevision = Number(casResult)
+    if (newRevision === -1) {
+      // 幂等命中（并发重复 commandId）：返回当前权威状态，不产生第二次变化
+      const fresh = await loadRoom(admin, roomId)
+      return json({
+        status: 'APPLIED',
+        idempotent: true,
+        match: fresh?.match_state,
+        revision: fresh?.revision ?? outcome.revision,
+        roomStatus: fresh?.status ?? outcome.roomStatus,
+        pendingUndo: (fresh?.pending_action as PendingUndo | null) ?? null,
+      })
+    }
 
-    // 审计之外的副带：刷新成员在线时间
+    // 刷新成员在线时间
     await admin
       .from('room_members')
       .update({ last_seen_at: new Date().toISOString() })
@@ -203,7 +225,7 @@ Deno.serve(async (req) => {
     return json({
       status: 'APPLIED',
       match: outcome.match,
-      revision: outcome.revision,
+      revision: newRevision,
       roomStatus: outcome.roomStatus,
       pendingUndo: outcome.pendingUndo,
     })

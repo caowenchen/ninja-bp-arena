@@ -23,9 +23,12 @@
 
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@bp-core": ["./supabase/functions/_shared/bp-core/index.ts"],
+      "@bp-core/*": ["./supabase/functions/_shared/bp-core/*"]
     },
     "types": ["vite/client"]
   },
-  "include": ["src", "test", "shared"]
+  "include": ["src", "test", "supabase/functions/_shared"],
+  "exclude": ["supabase/functions/_shared/supabase.ts"]
 }

@@ -17,6 +17,8 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // Shared BP Core 单一来源（Deno Edge Functions 与前端共用）
+      '@bp-core': fileURLToPath(new URL('./supabase/functions/_shared/bp-core', import.meta.url)),
     },
   },
   test: {

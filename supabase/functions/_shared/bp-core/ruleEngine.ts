@@ -1,4 +1,4 @@
-import type { BPActionType, BPSequenceStep, BattleRule, Side } from './types'
+import type { BPActionType, BPSequenceStep, BattleRule, Side } from './types.ts'
 
 /**
  * 规则引擎：负责 BP 序列的展开与校验。

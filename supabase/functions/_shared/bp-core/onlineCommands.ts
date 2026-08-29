@@ -1,9 +1,9 @@
-import type { MatchState, Side } from './types'
+import type { MatchState, Side } from './types.ts'
 import {
   canSelectNinja,
   enterGame,
   nextGame,
-  resetCurrentGame,
+  restartMatch,
   selectNinja,
   setGameWinner,
   startMatch,
@@ -12,8 +12,8 @@ import {
   timerPhaseChanged,
   getPhase,
   computeTimerPhaseKey,
-} from './bpEngine'
-import type { Ninja } from './types'
+} from './bpEngine.ts'
+import type { Ninja } from './types.ts'
 
 /**
  * 在线房间命令处理器（Shared BP Core 的纯函数部分）。
@@ -45,13 +45,26 @@ export type Seat = 'BLUE' | 'RED' | 'OBSERVER'
 
 export type RoomStatus = 'WAITING' | 'ACTIVE' | 'FINISHED' | 'CLOSED'
 
-/** 挂起的撤销请求（存 rooms.pending_action；revision 变化后自动失效由 targetRevision 保证） */
+/**
+ * 挂起的撤销请求（存 rooms.pending_action）。
+ *
+ * 语义（v0.3.1 修正）：REQUEST_UNDO 本身会使 room revision +1，
+ * pendingAtRevision 记录的是“请求被应用之后”的 revision。
+ * - 当前 room revision === pendingAtRevision：请求有效，对方可确认
+ * - 期间发生任何其他比赛命令（revision 前进）：请求自动失效
+ */
 export interface PendingUndo {
   type: 'UNDO'
   requestedBy: Seat
   requestedByUserId: string
-  targetRevision: number
   createdAt: number
+  pendingAtRevision: number
+}
+
+/** 就座成员（服务端从 room_members 读取；display_name 用于 START_MATCH 填名） */
+export interface SeatMember {
+  userId: string
+  displayName: string
 }
 
 export interface RoomCommandContext {
@@ -66,11 +79,11 @@ export interface RoomCommandContext {
   isHost: boolean
   myUserId: string
   hostUserId: string
-  /** 席位占用情况（START_MATCH 需要双方就座） */
-  seatUserIds: { BLUE: string | null; RED: string | null }
+  /** 就座成员（服务端读取；START_MATCH 需要双方且名称由服务端填充） */
+  seatMembers: { BLUE: SeatMember | null; RED: SeatMember | null }
   pendingUndo: PendingUndo | null
   /** 忍者池（SELECT_NINJA 校验忍者存在与 enabled） */
-  ninjas: Ninja[]
+  ninjas: Array<Pick<Ninja, 'id' | 'enabled'>>
   now: number
 }
 
@@ -111,6 +124,7 @@ export type RejectCode =
   | 'MATCH_FINISHED'
   | 'NOTHING_TO_UNDO'
   | 'NO_PENDING_UNDO'
+  | 'UNDO_EXPIRED'
   | 'UNDO_NOT_REQUESTER'
   | 'ENGINE_REJECTED'
   | 'ROOM_NOT_FOUND'
@@ -131,11 +145,14 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
     case 'START_MATCH': {
       if (!ctx.isHost) return reject('NOT_HOST', '只有房主可以开始比赛')
       if (ctx.roomStatus !== 'WAITING') return reject('ROOM_NOT_WAITING', '房间已经开始或已结束')
-      if (!ctx.seatUserIds.BLUE || !ctx.seatUserIds.RED) return reject('SEAT_NOT_READY', '需要蓝红双方都就座后才能开始')
+      if (!ctx.seatMembers.BLUE || !ctx.seatMembers.RED) return reject('SEAT_NOT_READY', '需要蓝红双方都就座后才能开始')
       if (match.status !== 'SETUP') return reject('ROOM_NOT_WAITING', '比赛状态异常')
-      const blueName = ctx.match.bluePlayerName
-      const redName = ctx.match.redPlayerName
-      const next = startMatch({ ...match, bluePlayerName: blueName, redPlayerName: redName })
+      // 玩家名称由服务端从 room_members.display_name 填充，不信任客户端
+      const next = startMatch({
+        ...match,
+        bluePlayerName: ctx.seatMembers.BLUE.displayName || match.bluePlayerName,
+        redPlayerName: ctx.seatMembers.RED.displayName || match.redPlayerName,
+      })
       return { match: next, extra: 'ACTIVE' }
     }
 
@@ -196,13 +213,8 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
       if (ctx.roomStatus !== 'ACTIVE' && ctx.roomStatus !== 'FINISHED') {
         return reject('ROOM_NOT_ACTIVE', '当前状态不能重置')
       }
-      const result = resetCurrentGame(match)
-      if (!result.ok || !result.state) {
-        // 已记录胜负 / 已结束的整场重置：回到全新 WAITING 场次由 host 重新开始
-        const fresh = startMatch({ ...match, status: 'SETUP' })
-        return { match: fresh, extra: 'WAITING' }
-      }
-      return { match: result.state }
+      // 整场重开：比分 0:0、无 Ban/Pick/USED/历史、计时器清空，回到 WAITING 由房主再次开始
+      return { match: restartMatch(match), extra: 'WAITING' }
     }
 
     case 'REQUEST_UNDO': {
@@ -217,11 +229,15 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
       if (ctx.roomStatus !== 'ACTIVE') return reject('ROOM_NOT_ACTIVE', '比赛未在进行中')
       const pending = ctx.pendingUndo
       if (!pending) return reject('NO_PENDING_UNDO', '当前没有撤销请求')
-      // 请求者自己不能确认；对方或房主可以确认
+      // 双人确认原则：请求者（按真实身份 userId）绝对不能自己确认，房主身份也不能绕过
+      if (pending.requestedByUserId === ctx.myUserId) {
+        return reject('UNDO_NOT_REQUESTER', '撤销请求需要对方确认')
+      }
+      // 只有另一方席位玩家或（非请求者的）房主可以确认
       const isOtherPlayer = isSeatPlayer(ctx.mySeat) && ctx.mySeat !== pending.requestedBy
-      if (!isOtherPlayer && !ctx.isHost) return reject('UNDO_NOT_REQUESTER', '等待对方处理撤销请求')
-      // 目标 revision 已变化则请求自动失效
-      if (pending.targetRevision !== ctx.revision) return reject('NO_PENDING_UNDO', '撤销请求已过期')
+      if (!isOtherPlayer && !ctx.isHost) return reject('NOT_PERMITTED', '只有对局玩家可以处理撤销请求')
+      // 请求应用后发生过任何其他比赛命令（revision 前进）→ 自动失效
+      if (pending.pendingAtRevision !== ctx.revision) return reject('UNDO_EXPIRED', '撤销请求已过期')
       const result = undoLastAction(ctx.match)
       if (!result.ok || !result.state) return reject('NOTHING_TO_UNDO', result.reason ?? '没有可撤销的操作')
       return { match: result.state }
@@ -293,22 +309,20 @@ export function applyRoomCommand(ctx: RoomCommandContext, cmd: RoomCommand): Com
     }
   }
 
-  // 撤销请求的生命周期
-  let pendingUndo: PendingUndo | null = ctx.pendingUndo
-  if (cmd.type === 'REQUEST_UNDO') {
-    pendingUndo = {
-      type: 'UNDO',
-      requestedBy: ctx.mySeat as 'BLUE' | 'RED',
-      requestedByUserId: ctx.myUserId,
-      targetRevision: ctx.revision,
-      createdAt: ctx.now,
-    }
-  } else if (cmd.type === 'CONFIRM_UNDO' || cmd.type === 'REJECT_UNDO') {
-    pendingUndo = null
-  } else if (pendingUndo && cmd.expectedRevision !== pendingUndo.targetRevision) {
-    // 状态已前进，挂起的撤销请求自动失效
-    pendingUndo = null
-  }
+  // 撤销请求的生命周期：
+  // - REQUEST_UNDO：创建请求；pendingAtRevision 记录“应用后”的 revision（= 当前 + 1）
+  // - CONFIRM/REJECT：清除
+  // - 任何其他比赛命令都会推进 revision → 挂起请求自动失效
+  const pendingUndo: PendingUndo | null =
+    cmd.type === 'REQUEST_UNDO'
+      ? {
+          type: 'UNDO',
+          requestedBy: ctx.mySeat as 'BLUE' | 'RED',
+          requestedByUserId: ctx.myUserId,
+          createdAt: ctx.now,
+          pendingAtRevision: ctx.revision + 1,
+        }
+      : null  // CONFIRM/REJECT 清除；任何其他比赛命令使挂起请求失效
 
   // 撤销请求类命令不改变 match_state 内容（仍 +1 revision 以广播）
   return {

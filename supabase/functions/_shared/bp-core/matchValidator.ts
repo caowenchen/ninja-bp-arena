@@ -1,5 +1,5 @@
-import type { BattleRule, BPAction, MatchStatus, Side, BPActionType, MatchState, Ninja } from './types'
-import { validateBattleRule } from './ruleEngine'
+import type { BattleRule, BPAction, MatchStatus, Side, BPActionType, MatchState, Ninja } from './types.ts'
+import { validateBattleRule } from './ruleEngine.ts'
 
 /**
  * 持久化数据的运行时校验（Shared BP Core）。

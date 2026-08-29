@@ -1,4 +1,4 @@
-import type { BattleRule, OnlineCommandType, Seat } from '@/shared/bp-core'
+import type { BattleRule, OnlineCommandType, Seat } from '@bp-core'
 import { supabase } from '@/lib/supabase'
 import type { CommandResponse, RoomSnapshot } from './types'
 

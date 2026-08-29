@@ -6,4 +6,4 @@ export type {
   GameState,
   MatchState,
   EngineResult,
-} from '../../shared/bp-core/types'
+} from '../../supabase/functions/_shared/bp-core/types'

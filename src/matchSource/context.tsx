@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from 'react'
-import type { MatchState, OnlineCommandType, PendingUndo, Side } from '@/shared/bp-core'
+import type { MatchState, OnlineCommandType, PendingUndo, Side } from '@bp-core'
 import type { ConnectionState, Seat } from '@/online/types'
 
 /**

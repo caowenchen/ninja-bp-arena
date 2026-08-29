@@ -7,73 +7,95 @@ on:
     branches: [main]
 
 jobs:
-  ci:
+  # ---------- 1. Web 质量门 ----------
+  web-quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Typecheck
+      - run: npm ci
+      - name: Typecheck（Web + Shared Core）
         run: npm run typecheck
-
       - name: Lint
         run: npm run lint
-
       - name: Unit tests
         run: npm run test
-
       - name: Build
         run: npm run build
 
-  e2e:
+  # ---------- 2. 本地模式 E2E ----------
+  local-e2e:
     runs-on: ubuntu-latest
-    needs: ci
+    needs: web-quality
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: E2E tests（本地模式；在线用例需要 Supabase 凭据才会运行）
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Local E2E（不依赖 Supabase）
         run: npm run test:e2e
 
-  # 在线集成测试：需要 Supabase 凭据。未配置仓库 Variables 时自动跳过，
-  # 不阻塞基础 CI（不要把 Publishable Key 之外的任何密钥放进 CI）。
-  online-integration:
+  # ---------- 3. Edge Functions Deno 检查 ----------
+  edge-check:
     runs-on: ubuntu-latest
-    needs: ci
-    if: vars.VITE_SUPABASE_URL != ''
+    needs: web-quality
     steps:
       - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Deno check（Shared Core + 三个 Edge Function）
+        run: npm run check:functions
 
+  # ---------- 4. Supabase 集成（Local Stack：db reset / RLS 测试 / 函数冒烟 / 在线 E2E） ----------
+  supabase-integration:
+    runs-on: ubuntu-latest
+    needs: [web-quality, edge-check]
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
 
-      - name: Install dependencies
-        run: npm ci
+      - name: 启动 Local Supabase
+        run: supabase start
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: 从空数据库验证迁移（db reset）
+        run: supabase db reset
 
-      - name: Online E2E
+      - name: 数据库安全测试（RLS attack / 权限）
+        run: supabase test db
+
+      - name: 读取本地密钥并配置 Functions 环境
+        run: |
+          supabase status -o json > status.json
+          echo "SUPABASE_ANON_KEY=$(jq -r '.keys.ANON_KEY // .keys.anon_key' status.json)" >> $GITHUB_ENV
+          echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r '.keys.SERVICE_ROLE_KEY // .keys.service_role_key' status.json)" >> $GITHUB_ENV
+          cat > supabase/functions/.env <<EOF
+          SUPABASE_URL=http://127.0.0.1:54321
+          SUPABASE_SERVICE_ROLE_KEY=$(jq -r '.keys.SERVICE_ROLE_KEY // .keys.service_role_key' status.json)
+          EOF
+
+      - name: Edge Functions 冒烟（真实 HTTP 调用）
+        run: node scripts/functions-smoke.mjs
+
+      - name: 在线集成 E2E（完整 BO3 / 权限 / 撤销 / RLS attack）
         env:
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
-        run: npm run test:e2e -- e2e/online-room.spec.ts
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ env.SUPABASE_ANON_KEY }}
+        run: npm run test:online

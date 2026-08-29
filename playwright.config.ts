@@ -6,6 +6,8 @@ import { defineConfig } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './e2e',
+  testMatch: /.*\.spec\.ts/,
+  testIgnore: /e2e\/online\/.*/, // 在线集成测试由 playwright.online.config.ts（npm run test:online）运行
   timeout: 60_000,
   retries: process.env.CI ? 1 : 0,
   workers: 1,

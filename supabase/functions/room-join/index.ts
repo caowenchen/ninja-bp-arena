@@ -3,11 +3,16 @@ import { serviceClient, getUserFromRequest } from '../_shared/supabase.ts'
 
 /**
  * POST /functions/v1/room-join
- * 通过房间码加入房间（席位的唯一性与容量由数据库唯一索引保证）。
+ * 通过房间码加入房间（席位唯一性由数据库部分唯一索引保证）。
  * body: { code: string, seat: 'AUTO' | 'BLUE' | 'RED' | 'OBSERVER', displayName: string }
  *
- * 说明：再次调用（刷新 / 重连）时若已是成员，直接返回现有席位（幂等）。
+ * - 再次调用（刷新 / 重连）若已是成员：幂等返回现有席位，不重复占席
+ * - 加入尝试（无论成败）按 auth user 做服务端限速：60 秒最多 15 次
  */
+const MAX_BODY_BYTES = 8 * 1024
+const RATE_LIMIT_WINDOW_MS = 60_000
+const RATE_LIMIT_MAX = 15
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions()
   if (req.method !== 'POST') return json({ error: 'METHOD_NOT_ALLOWED' }, 405)
@@ -17,10 +22,13 @@ Deno.serve(async (req) => {
     const user = await getUserFromRequest(admin, req)
     if (!user) return json({ error: 'NOT_AUTHENTICATED', message: '请先进入在线模式' }, 401)
 
-    const body = await req.json().catch(() => null)
-    const code = String(body?.code ?? '').trim().toUpperCase()
-    const seat = String(body?.seat ?? 'AUTO')
-    const displayName = String(body?.displayName ?? '').trim() || '玩家'
+    const rawBody = await req.text()
+    if (rawBody.length > MAX_BODY_BYTES) return json({ error: 'PAYLOAD_TOO_LARGE', message: '请求体积超出限制' }, 413)
+    const body = JSON.parse(rawBody) as { code?: unknown; seat?: unknown; displayName?: unknown }
+
+    const code = String(body.code ?? '').trim().toUpperCase()
+    const seat = String(body.seat ?? 'AUTO')
+    const displayName = String(body.displayName ?? '').trim() || '玩家'
 
     if (code.length < 4 || code.length > 8) {
       return json({ error: 'INVALID_CODE', message: '房间号格式不正确' }, 400)
@@ -32,19 +40,33 @@ Deno.serve(async (req) => {
       return json({ error: 'INVALID_SEAT', message: '席位参数不正确' }, 400)
     }
 
-    // ---- 基础频率限制（按用户）：60 秒内加入超过 10 次视为滥用 ----
-    const { count: recentJoins } = await admin
-      .from('room_members')
+    // ---- 服务端限速：无论房间码对错，每次尝试都计数 ----
+    const { error: attemptError } = await admin
+      .from('join_attempts')
+      .insert({ user_id: user.id })
+    if (attemptError) return json({ error: 'DB_ERROR', message: attemptError.message }, 500)
+
+    const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString()
+    const { count: recentAttempts } = await admin
+      .from('join_attempts')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
-      .gt('joined_at', new Date(Date.now() - 60_000).toISOString())
-    if ((recentJoins ?? 0) >= 10) {
-      return json({ error: 'RATE_LIMITED', message: '操作过于频繁，请稍后再试' }, 429)
+      .gt('attempted_at', windowStart)
+    if ((recentAttempts ?? 0) > RATE_LIMIT_MAX) {
+      return json({ error: 'RATE_LIMITED', message: '尝试过于频繁，请稍后再试' }, 429)
+    }
+    // 顺带清理一小时前的旧记录，防止表无限增长
+    if ((recentAttempts ?? 0) % 5 === 1) {
+      await admin
+        .from('join_attempts')
+        .delete()
+        .lt('attempted_at', new Date(Date.now() - 3600_000).toISOString())
     }
 
+    // ---- 房间校验 ----
     const { data: room, error: roomError } = await admin
       .from('rooms')
-      .select('id, code, status, expires_at, host_user_id')
+      .select('id, code, status, expires_at')
       .eq('code', code)
       .maybeSingle()
     if (roomError) return json({ error: 'DB_ERROR', message: roomError.message }, 500)
@@ -54,10 +76,10 @@ Deno.serve(async (req) => {
       return json({ error: 'ROOM_EXPIRED', message: '房间已过期' }, 410)
     }
 
-    // 已是成员 → 幂等返回当前席位（刷新 / 断线重连不重复占席）
+    // ---- 幂等：已是成员则返回现有席位（刷新 / 断线重连不重复占席）----
     const { data: existing } = await admin
       .from('room_members')
-      .select('seat, display_name')
+      .select('seat')
       .eq('room_id', room.id)
       .eq('user_id', user.id)
       .maybeSingle()
@@ -70,11 +92,8 @@ Deno.serve(async (req) => {
       return json({ roomId: room.id, code: room.code, seat: existing.seat, rejoined: true })
     }
 
-    // 解析目标席位：请求优先，冲突或 AUTO 时自动挑空位，都满则观战
-    const { data: members } = await admin
-      .from('room_members')
-      .select('seat')
-      .eq('room_id', room.id)
+    // ---- 席位协商：请求优先，被占或 AUTO 时挑空位，都满则观战 ----
+    const { data: members } = await admin.from('room_members').select('seat').eq('room_id', room.id)
     const taken = new Set((members ?? []).map((m) => m.seat as string))
 
     let resolved: 'BLUE' | 'RED' | 'OBSERVER'
@@ -93,7 +112,6 @@ Deno.serve(async (req) => {
       display_name: displayName,
     })
     if (insertError) {
-      // 唯一索引冲突：另一人抢先入座
       if (insertError.code === '23505') {
         return json({ error: 'SEAT_TAKEN', message: '该阵营刚被占用，请选择其他阵营' }, 409)
       }

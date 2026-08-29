@@ -1,5 +1,5 @@
-import type { MatchState } from './types'
-import { SIDE_TEXT, ACTION_TEXT, type BPAction } from './types'
+import type { MatchState } from './types.ts'
+import { SIDE_TEXT, ACTION_TEXT, type BPAction } from './types.ts'
 
 /**
  * 历史引擎：

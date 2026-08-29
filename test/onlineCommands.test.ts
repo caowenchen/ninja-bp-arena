@@ -5,10 +5,10 @@ import {
   applyRoomCommand,
   type RoomCommand,
   type RoomCommandContext,
-} from '../shared/bp-core/onlineCommands'
-import { createMatch, startMatch, getPhase, selectNinja } from '../shared/bp-core/bpEngine'
-import { validateMatchState } from '../shared/bp-core/matchValidator'
-import type { MatchState } from '../shared/bp-core/types'
+} from '../supabase/functions/_shared/bp-core/onlineCommands'
+import { createMatch, startMatch, getPhase, selectNinja } from '../supabase/functions/_shared/bp-core/bpEngine'
+import { validateMatchState } from '../supabase/functions/_shared/bp-core/matchValidator'
+import type { MatchState } from '../supabase/functions/_shared/bp-core/types'
 
 /**
  * 在线命令处理器测试（Shared BP Core 纯函数，无需 Supabase）。
@@ -32,7 +32,10 @@ function freshContext(overrides: Partial<RoomCommandContext> = {}): RoomCommandC
     isHost: false,
     myUserId: BLUE_ID,
     hostUserId: HOST,
-    seatUserIds: { BLUE: HOST, RED: RED_ID },
+    seatMembers: {
+    BLUE: { userId: HOST, displayName: '蓝方玩家' },
+    RED: { userId: RED_ID, displayName: '红方玩家' },
+  },
     pendingUndo: null,
     ninjas: NINJA_POOL,
     now: NOW,
@@ -75,7 +78,10 @@ function activeContext(overrides: Partial<RoomCommandContext> = {}): { ctx: Room
     isHost: false,
     myUserId: RED_ID,
     hostUserId: HOST,
-    seatUserIds: { BLUE: BLUE_ID, RED: RED_ID },
+    seatMembers: {
+    BLUE: { userId: BLUE_ID, displayName: '蓝方玩家' },
+    RED: { userId: RED_ID, displayName: '红方玩家' },
+  },
     pendingUndo: null,
     ninjas: NINJA_POOL,
     now: NOW,
@@ -107,7 +113,10 @@ function completedGameContext(overrides: Partial<RoomCommandContext> = {}): { ct
     isHost: false,
     myUserId: BLUE_ID,
     hostUserId: HOST,
-    seatUserIds: { BLUE: BLUE_ID, RED: RED_ID },
+    seatMembers: {
+    BLUE: { userId: BLUE_ID, displayName: '蓝方玩家' },
+    RED: { userId: RED_ID, displayName: '红方玩家' },
+  },
     pendingUndo: null,
     ninjas: NINJA_POOL,
     now: NOW,
@@ -219,9 +228,32 @@ describe('在线命令：房间状态', () => {
       isHost: true,
       mySeat: 'BLUE',
       myUserId: HOST,
-      seatUserIds: { BLUE: HOST, RED: null },
+      seatMembers: { BLUE: { userId: HOST, displayName: '蓝方玩家' }, RED: null },
     })
     expect(applyRoomCommand(missingRed, cmd('START_MATCH', 5))).toMatchObject({ status: 'REJECTED', code: 'SEAT_NOT_READY' })
+  })
+
+  it('START_MATCH：服务端用 room_members.display_name 填充双方名称', () => {
+    const waiting = freshContext({
+      isHost: true,
+      mySeat: 'BLUE',
+      myUserId: HOST,
+      match: { ...createMatch(cloneRule(DEFAULT_RULE), '蓝方玩家', '红方玩家') },
+      seatMembers: {
+        BLUE: { userId: HOST, displayName: '张三' },
+        RED: { userId: RED_ID, displayName: '李四' },
+      },
+    })
+    const out = applyRoomCommand(waiting, cmd('START_MATCH', 5))
+    expect(out.status).toBe('APPLIED')
+    if (out.status !== 'APPLIED') return
+    expect(out.match.bluePlayerName).toBe('张三')
+    expect(out.match.redPlayerName).toBe('李四')
+  })
+
+  it('START_MATCH：Observer 被拒绝', () => {
+    const waiting = freshContext({ isHost: false, mySeat: 'OBSERVER' })
+    expect(applyRoomCommand(waiting, cmd('START_MATCH', 5))).toMatchObject({ status: 'REJECTED', code: 'NOT_HOST' })
   })
 
   it('ENTER_GAME 任一席位玩家可用且幂等；胜负/下一局/重置仅房主', () => {
@@ -284,17 +316,21 @@ describe('在线命令：撤销请求流程', () => {
     const req = applyRoomCommand(ctx, cmd('REQUEST_UNDO', 12))
     expect(req.status).toBe('APPLIED')
     if (req.status !== 'APPLIED') return
-    expect(req.pendingUndo).toMatchObject({ requestedBy: 'RED', targetRevision: 12 })
+    expect(req.pendingUndo).toMatchObject({ requestedBy: 'RED', pendingAtRevision: 13 })
+    expect(req.revision).toBe(13)
     expect(req.match.history).toHaveLength(4)
 
-    // 请求者自己确认 → 拒绝
-    const self = applyRoomCommand({ ...ctx, pendingUndo: req.pendingUndo }, cmd('CONFIRM_UNDO', 12))
+    // 请求者自己确认（即使同时是房主）→ 必须拒绝
+    const self = applyRoomCommand(
+      { ...ctx, isHost: true, myUserId: RED_ID, pendingUndo: req.pendingUndo, revision: 13 },
+      cmd('CONFIRM_UNDO', 13),
+    )
     expect(self).toMatchObject({ status: 'REJECTED', code: 'UNDO_NOT_REQUESTER' })
 
     // 对方（BLUE）确认 → 撤销最后一步（蓝方 Ban 鼬）
     const confirm = applyRoomCommand(
-      { ...ctx, mySeat: 'BLUE', myUserId: BLUE_ID, pendingUndo: req.pendingUndo },
-      cmd('CONFIRM_UNDO', 12),
+      { ...ctx, mySeat: 'BLUE', myUserId: BLUE_ID, pendingUndo: req.pendingUndo, revision: 13 },
+      cmd('CONFIRM_UNDO', 13),
     )
     expect(confirm.status).toBe('APPLIED')
     if (confirm.status !== 'APPLIED') return
@@ -309,8 +345,8 @@ describe('在线命令：撤销请求流程', () => {
     const pending = req.pendingUndo
 
     const rej = applyRoomCommand(
-      { ...ctx, mySeat: 'BLUE', myUserId: BLUE_ID, pendingUndo: pending },
-      cmd('REJECT_UNDO', 12),
+      { ...ctx, mySeat: 'BLUE', myUserId: BLUE_ID, pendingUndo: pending, revision: 13 },
+      cmd('REJECT_UNDO', 13),
     )
     expect(rej.status).toBe('APPLIED')
     if (rej.status !== 'APPLIED') return
@@ -318,17 +354,35 @@ describe('在线命令：撤销请求流程', () => {
     expect(rej.match.history).toHaveLength(4)
 
     // 状态已前进（revision 13），挂起的撤销请求（target 12）自动失效
+    // 请求应用后发生了其他比赛命令（revision 前进到 14）→ 请求自动失效
     const expired = applyRoomCommand(
-      { ...ctx, mySeat: 'BLUE', myUserId: BLUE_ID, revision: 13, pendingUndo: pending },
-      cmd('CONFIRM_UNDO', 13),
+      { ...ctx, mySeat: 'BLUE', myUserId: BLUE_ID, revision: 14, pendingUndo: pending },
+      cmd('CONFIRM_UNDO', 14),
     )
-    expect(expired).toMatchObject({ status: 'REJECTED', code: 'NO_PENDING_UNDO' })
+    expect(expired).toMatchObject({ status: 'REJECTED', code: 'UNDO_EXPIRED' })
   })
 
   it('历史为空时 REQUEST_UNDO 拒绝', () => {
     const { ctx } = activeContext({ mySeat: 'RED' })
     const empty = { ...ctx, match: startMatch(ctx.match) }
     expect(applyRoomCommand(empty, cmd('REQUEST_UNDO', 12))).toMatchObject({ status: 'REJECTED', code: 'NOTHING_TO_UNDO' })
+  })
+})
+
+describe('在线命令：撤销请求自动失效', () => {
+  it('REQUEST_UNDO 后发生其他比赛命令 → pendingUndo 被清除', () => {
+    const { ctx } = activeContext({ mySeat: 'RED' })
+    const req = applyRoomCommand(ctx, cmd('REQUEST_UNDO', 12))
+    if (req.status !== 'APPLIED') throw new Error('request failed')
+    expect(req.pendingUndo).not.toBeNull()
+
+    // 行动方（红方自己）在请求后继续选择 → 其他比赛命令使请求失效
+    const next = applyRoomCommand(
+      { ...ctx, match: req.match, revision: req.revision, pendingUndo: req.pendingUndo },
+      cmd('SELECT_NINJA', req.revision, { ninjaId: 'example-gaara-012' }),
+    )
+    if (next.status !== 'APPLIED') throw new Error('select failed')
+    expect(next.pendingUndo).toBeNull()
   })
 })
 

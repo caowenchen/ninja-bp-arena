@@ -7,6 +7,10 @@
 
 **在线使用**：https://caowenchen.github.io/ninja-bp-arena/ （GitHub Pages 自动部署）
 
+> ⚠ **部署是两件事**：GitHub Pages 只发布前端页面；双人在线 BP 需要另外部署
+> Supabase 后端（migration + Edge Functions，见下方「在线 BP 设置」与可选的
+> `deploy-supabase.yml` 手动工作流）。Pages 显示 success ≠ 在线模式已部署。
+
 ## 功能
 
 - **完整 BO3 流程**：Ban（蓝1 → 红2 → 蓝1）→ Pick（红1 → 蓝2 → 红2 → 蓝1）→ 阵容锁定 → 记录胜负 → 自动进入下一局，先胜 2 局结束整场
@@ -66,7 +70,10 @@ npm run dev        # 开发：http://localhost:5173
 | `npm run typecheck` | TypeScript 严格检查 |
 | `npm run lint` | ESLint（0 error） |
 | `npm run test` | Vitest 单元测试 |
-| `npm run test:e2e` | Playwright E2E（首次需 `npx playwright install chromium`） |
+| `npm run test:e2e` | 本地模式 E2E（首次需 `npx playwright install chromium`） |
+| `npm run check:functions` | Deno 检查 Edge Functions 与 Shared Core（需安装 Deno） |
+| `npm run test:db` | 数据库 RLS 安全测试（需 Local Supabase 运行中） |
+| `npm run test:online` | 在线集成 E2E（完整 BO3 / 权限 / RLS attack；**Supabase 不可用时直接失败**） |
 | `npm run build` | 生产构建（含类型检查） |
 | `npm run build:pages` | GitHub Pages 构建（子路径 base + 404.html 兜底） |
 
@@ -226,3 +233,28 @@ GitHub Pages 部署：在仓库 Settings → Secrets and variables → Actions �
 - 双方需要使用同一份忍者池 JSON（房间固化创建者的池子做服务端校验；名字显示取自各自本地池）
 - 在线模式的撤销 = 撤销最后一步 Ban/Pick，且需对方确认（本地模式撤销能力更强）
 - 胜负记录/进入下一局/重置 仅房主可执行（防双提交），后续可加双方确认
+
+
+## v0.3.1 修复说明
+
+- **Edge Function 导入路径**：Shared BP Core 正式迁至 `supabase/functions/_shared/bp-core`
+  （Supabase CLI 推荐位置），前端通过 Vite alias `@bp-core` 引用同一份实现；
+  修复了 `../../shared/...` 从函数目录解析到 `supabase/shared/...` 的路径错误
+- **`deno check` 进入 CI**（`npm run check:functions`）：三个函数 + Shared Core 全部静态检查
+- **Host 判定修复**：room-command 读取 `host_user_id`，`isHost = JWT user.id === host_user_id`
+  （v0.3.0 该字段缺失导致 Host 权限全部失效）
+- **撤销请求语义重做**：`pendingAtRevision` = 请求应用后的 revision；
+  期间任何其他比赛命令都会使命令失效；请求者按真实身份（JWT user.id）绝对不能自确认，
+  房主身份也不能绕过双人确认
+- **RESET_MATCH**：新增 `restartMatch()`（比分 0:0、清空 Ban/Pick/USED/历史/计时器），
+  在线重置回到 WAITING 由房主再次开始
+- **玩家名称服务端填充**：START_MATCH 从 `room_members.display_name` 读取双方名称写入 MatchState
+- **RLS 重建（最小权限）**：客户端对三张表仅 SELECT；INSERT/UPDATE/DELETE 全部 REVOKE；
+  席位/花名册判断走 `private.is_room_member()`（SECURITY DEFINER，无自引用递归）；
+  加入尝试限速表 `join_attempts`（成功失败都计数）
+- **原子性**：房间创建（房间 + 房主入座）与「CAS 写入 + 命令审计」分别由
+  `private.create_room_transaction` / `private.apply_room_state_cas` 单事务完成，
+  仅 service role 可执行
+- **真实 Supabase 验证进入 CI**：`supabase-integration` job 启动 Local Supabase →
+  `db reset` 验证迁移 → pgTAP RLS 安全测试 → Edge Functions HTTP 冒烟 → 在线集成 E2E
+  （完整 BO3 / 权限 / 撤销 / RLS attack / 幂等 / revision 冲突）

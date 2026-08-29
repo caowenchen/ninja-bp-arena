@@ -10,5 +10,5 @@ export type {
   BattleRule,
   BPAction,
   MatchTimerState,
-} from '../../shared/bp-core/types'
-export { SIDE_TEXT, ACTION_TEXT } from '../../shared/bp-core/types'
+} from '../../supabase/functions/_shared/bp-core/types'
+export { SIDE_TEXT, ACTION_TEXT } from '../../supabase/functions/_shared/bp-core/types'

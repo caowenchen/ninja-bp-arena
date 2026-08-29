@@ -1,7 +1,7 @@
-import type { BPActionType, BattleRule, Side } from './types'
-import type { EngineResult, GameState, MatchState } from './types'
-import type { Ninja } from './types'
-import { expandSequence, type ExpandedAction } from './ruleEngine'
+import type { BPActionType, BattleRule, Side } from './types.ts'
+import type { EngineResult, GameState, MatchState } from './types.ts'
+import type { Ninja } from './types.ts'
+import { expandSequence, type ExpandedAction } from './ruleEngine.ts'
 
 /**
  * BP 引擎：整个项目的核心状态机（Shared BP Core）。
@@ -69,6 +69,24 @@ export function startMatch(m: MatchState): MatchState {
     currentGame: 1,
     games: [createGameState(1)],
     history: [],
+    updatedAt: Date.now(),
+  }
+}
+
+/**
+ * 整场重开：保留 rule / 双方名称 / match id，
+ * 重置比分、局数、历史、Ban/Pick、USED、计时器等全部比赛运行状态。
+ * 在线 RESET_MATCH 必须使用本函数（注意 startMatch 不重置比分）。
+ */
+export function restartMatch(m: MatchState): MatchState {
+  return {
+    ...cloneMatch(m),
+    score: { blue: 0, red: 0 },
+    currentGame: 1,
+    games: [createGameState(1)],
+    history: [],
+    status: 'SETUP',
+    timer: undefined,
     updatedAt: Date.now(),
   }
 }
@@ -181,7 +199,11 @@ export function getUsedNinjas(m: MatchState): { blue: string[]; red: string[] } 
  * 判断某忍者当前能否被选择 / 禁用，失败时给出明确原因。
  * 校验顺序经过设计，保证提示与玩家直觉一致。
  */
-export function canSelectNinja(m: MatchState, ninjaId: string, ninja?: Ninja): SelectCheck {
+export function canSelectNinja(
+  m: MatchState,
+  ninjaId: string,
+  ninja?: Pick<Ninja, 'id' | 'enabled'>,
+): SelectCheck {
   if (m.status === 'SETUP') return deny('比赛尚未开始')
   if (m.status === 'MATCH_FINISHED') return deny('比赛已经结束')
 
@@ -260,11 +282,11 @@ export function getNinjaCardStatus(m: MatchState, ninja: Ninja): NinjaStatusInfo
   return { status: 'AVAILABLE', reason: '' }
 }
 
-export function getAvailableNinjas(m: MatchState, pool: Ninja[]): Ninja[] {
+export function getAvailableNinjas(m: MatchState, pool: Pick<Ninja, 'id' | 'enabled'>[]): Pick<Ninja, 'id' | 'enabled'>[] {
   return pool.filter((n) => canSelectNinja(m, n.id, n).allowed)
 }
 
-export function getUnavailableReason(m: MatchState, ninjaId: string, ninja?: Ninja): string | null {
+export function getUnavailableReason(m: MatchState, ninjaId: string, ninja?: Pick<Ninja, 'id' | 'enabled'>): string | null {
   const check = canSelectNinja(m, ninjaId, ninja)
   return check.allowed ? null : check.reason ?? null
 }
@@ -279,7 +301,7 @@ const fail = (reason: string): EngineResult => ({ ok: false, reason })
  * 按当前阶段执行 Ban 或 Pick：阶段是 BAN 就禁用，是 PICK 就选择。
  * 点击哪个忍者由 UI 决定，属于哪一方由引擎的阶段推导决定。
  */
-export function selectNinja(m: MatchState, ninjaId: string, ninja?: Ninja): EngineResult {
+export function selectNinja(m: MatchState, ninjaId: string, ninja?: Pick<Ninja, 'id' | 'enabled'>): EngineResult {
   const check = canSelectNinja(m, ninjaId, ninja)
   if (!check.allowed) return fail(check.reason ?? '无法选择该忍者')
 

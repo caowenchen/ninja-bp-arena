@@ -1,32 +1,39 @@
 -- ============================================================================
--- Ninja BP Arena · 在线 BP 房间 schema（v0.3.0）
--- 表 / 索引 / RLS / Realtime 一次性可复现，禁止只在 Dashboard 手工创建。
--- 安全边界：客户端永远不能直接修改 match_state，只能通过 room-command Edge Function。
+-- Ninja BP Arena · 在线 BP 房间 schema（v0.3.1）
+-- 安全模型（最小权限）：
+--   * 客户端（authenticated/anon）对三张业务表只有 SELECT；
+--     rooms / room_members / room_commands 的一切写入都通过
+--     service role 的 Edge Function（create / join / command）完成。
+--   * 权限判断统一走 private schema 的 SECURITY DEFINER 函数，
+--     避免 room_members RLS 自引用递归。
+--   * 房间创建、状态 CAS 写入 + 审计均为数据库事务（原子）。
+--   * 本文件必须能从空数据库一次性 supabase db reset 成功。
 -- ============================================================================
 
 create extension if not exists pgcrypto;
 
 -- ---------------------------------------------------------------------------
--- 房间：权威 MatchState 的唯一存放处
+-- private schema：安全辅助函数与 RPC（不通过 PostgREST 暴露）
+-- ---------------------------------------------------------------------------
+create schema if not exists private;
+revoke all on schema private from public;
+revoke all on schema private from anon;
+revoke all on schema private from authenticated;
+
+-- ---------------------------------------------------------------------------
+-- rooms：权威 MatchState 的唯一存放处
 -- ---------------------------------------------------------------------------
 create table if not exists public.rooms (
   id uuid primary key default gen_random_uuid(),
-  -- 对用户展示的房间号（6 位，避开 0/O、1/I/L 等混淆字符），UNIQUE 由数据库保证
   code text not null unique check (char_length(code) between 4 and 8),
   host_user_id uuid not null,
   status text not null default 'WAITING' check (status in ('WAITING', 'ACTIVE', 'FINISHED', 'CLOSED')),
-  -- 权威 MatchState（shared/bp-core 结构），仅 Edge Function（service role）可写
   match_state jsonb not null,
-  -- 房间忍者池快照（[{id, enabled}]）：创建时固化，
-  -- 服务端据此校验 SELECT_NINJA 的忍者存在与启用（与本地模式同语义）
   pool jsonb not null default '[]'::jsonb,
-  -- 乐观锁版本号：所有状态更新必须 WHERE revision = expected
   revision bigint not null default 0,
-  -- 挂起的撤销请求 { type, requestedBy, requestedByUserId, targetRevision, createdAt }
   pending_action jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  -- 房间有效期 24h，过期禁止加入与操作
   expires_at timestamptz not null default (now() + interval '24 hours')
 );
 
@@ -34,8 +41,7 @@ create index if not exists rooms_code_idx on public.rooms (code);
 create index if not exists rooms_expires_at_idx on public.rooms (expires_at);
 
 -- ---------------------------------------------------------------------------
--- 房间成员：seat 唯一性由数据库部分唯一索引保证（不是前端判断）
--- 同一 user 在同一房间只有一条 member（多标签页不会占两个席位）
+-- room_members：席位唯一性由数据库部分唯一索引保证
 -- ---------------------------------------------------------------------------
 create table if not exists public.room_members (
   id uuid primary key default gen_random_uuid(),
@@ -48,18 +54,15 @@ create table if not exists public.room_members (
   unique (room_id, user_id)
 );
 
--- 同一房间最多一个 BLUE / 一个 RED
 create unique index if not exists room_members_seat_blue_idx
   on public.room_members (room_id) where seat = 'BLUE';
 create unique index if not exists room_members_seat_red_idx
   on public.room_members (room_id) where seat = 'RED';
-
 create index if not exists room_members_room_idx on public.room_members (room_id);
 create index if not exists room_members_user_idx on public.room_members (user_id);
 
 -- ---------------------------------------------------------------------------
--- 命令审计：command_id 幂等 + 排错（不保存完整 MatchState）
--- 客户端没有 INSERT 权限，只有 Edge Function（service role）写入
+-- room_commands：命令审计（幂等靠 command_id unique 约束）
 -- ---------------------------------------------------------------------------
 create table if not exists public.room_commands (
   id uuid primary key default gen_random_uuid(),
@@ -77,6 +80,18 @@ create table if not exists public.room_commands (
 
 create index if not exists room_commands_room_idx on public.room_commands (room_id);
 create index if not exists room_commands_command_id_idx on public.room_commands (command_id);
+
+-- ---------------------------------------------------------------------------
+-- join_attempts：加入尝试限速（成功与否都计数；只有 service role 读写）
+-- ---------------------------------------------------------------------------
+create table if not exists public.join_attempts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  attempted_at timestamptz not null default now()
+);
+create index if not exists join_attempts_user_time_idx on public.join_attempts (user_id, attempted_at);
+alter table public.join_attempts enable row level security;
+revoke all on public.join_attempts from anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- updated_at 自动维护
@@ -97,77 +112,196 @@ create trigger rooms_set_updated_at
   for each row execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- RLS：全部业务表 ENABLE ROW LEVEL SECURITY
+-- private.is_room_member：SECURITY DEFINER 成员判断
+-- （ rooms / room_members / room_commands 的 RLS 都用它，避免自引用递归）
+-- ---------------------------------------------------------------------------
+create or replace function private.is_room_member(p_room_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = ''
+stable
+as $$
+  select exists (
+    select 1
+    from public.room_members m
+    where m.room_id = p_room_id
+      and m.user_id = auth.uid()
+  )
+$$;
+
+revoke all on function private.is_room_member(uuid) from public;
+revoke all on function private.is_room_member(uuid) from anon;
+revoke all on function private.is_room_member(uuid) from authenticated;
+grant execute on function private.is_room_member(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- private.create_room_transaction：创建房间 + 房主入座（原子）。
+-- 房间码用 pgcrypto 加密学随机源生成；唯一冲突自动重试。
+-- 只允许 service role（Edge Function）调用。
+-- ---------------------------------------------------------------------------
+create or replace function private.create_room_transaction(
+  p_user_id uuid,
+  p_seat text,
+  p_display_name text,
+  p_match_state jsonb,
+  p_pool jsonb
+)
+returns table (room_id uuid, room_code text)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_id uuid;
+  v_code text;
+  v_charset text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  v_attempt int := 0;
+  v_bytes bytea;
+  v_i int;
+begin
+  if p_seat not in ('BLUE', 'RED') then
+    raise exception 'INVALID_SEAT';
+  end if;
+  if char_length(p_display_name) < 1 or char_length(p_display_name) > 20 then
+    raise exception 'INVALID_DISPLAY_NAME';
+  end if;
+  if jsonb_typeof(p_pool) <> 'array' or jsonb_array_length(p_pool) > 2000 then
+    raise exception 'INVALID_POOL';
+  end if;
+
+  loop
+    v_attempt := v_attempt + 1;
+    if v_attempt > 6 then
+      raise exception 'CODE_GEN_FAILED';
+    end if;
+    v_bytes := gen_random_bytes(6);
+    v_code := '';
+    for v_i in 1..6 loop
+      v_code := v_code || substr(v_charset, (get_byte(v_bytes, v_i - 1) % 31) + 1, 1);
+    end loop;
+
+    begin
+      insert into public.rooms (code, host_user_id, status, match_state, pool)
+      values (v_code, p_user_id, 'WAITING', p_match_state, p_pool)
+      returning id into v_id;
+      exit;
+    exception when unique_violation then
+      null;  -- 房间码冲突 → 换一个重试
+    end;
+  end loop;
+
+  insert into public.room_members (room_id, user_id, seat, display_name)
+  values (v_id, p_user_id, p_seat, p_display_name);
+
+  return query select v_id, v_code;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- private.apply_room_state_cas：revision CAS 写入 + 命令审计（同一事务）。
+-- 返回新 revision；-1 表示 commandId 幂等命中；REVISION_CONFLICT 异常会整体回滚。
+-- 只允许 service role（Edge Function）调用。
+-- ---------------------------------------------------------------------------
+create or replace function private.apply_room_state_cas(
+  p_room_id uuid,
+  p_expected_revision bigint,
+  p_command_id uuid,
+  p_user_id uuid,
+  p_command_type text,
+  p_payload jsonb,
+  p_next_match_state jsonb,
+  p_next_status text,
+  p_next_pending_action jsonb
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_new_revision bigint;
+begin
+  begin
+    insert into public.room_commands
+      (command_id, room_id, user_id, command_type, expected_revision, payload, status)
+    values
+      (p_command_id, p_room_id, p_user_id, p_command_type, p_expected_revision, p_payload, 'APPLIED');
+  exception when unique_violation then
+    return -1;  -- 幂等命中：该命令此前已被应用
+  end;
+
+  update public.rooms
+  set match_state = p_next_match_state,
+      revision = revision + 1,
+      status = p_next_status,
+      pending_action = p_next_pending_action
+  where id = p_room_id
+    and revision = p_expected_revision
+  returning revision into v_new_revision;
+
+  if v_new_revision is null then
+    raise exception 'REVISION_CONFLICT';
+  end if;
+
+  update public.room_commands
+  set applied_revision = v_new_revision
+  where command_id = p_command_id;
+
+  return v_new_revision;
+end;
+$$;
+
+revoke all on function private.create_room_transaction(uuid, text, text, jsonb, jsonb) from public;
+revoke all on function private.create_room_transaction(uuid, text, text, jsonb, jsonb) from anon;
+revoke all on function private.create_room_transaction(uuid, text, text, jsonb, jsonb) from authenticated;
+grant execute on function private.create_room_transaction(uuid, text, text, jsonb, jsonb) to service_role;
+
+revoke all on function private.apply_room_state_cas(uuid, bigint, uuid, uuid, text, jsonb, jsonb, text, jsonb) from public;
+revoke all on function private.apply_room_state_cas(uuid, bigint, uuid, uuid, text, jsonb, jsonb, text, jsonb) from anon;
+revoke all on function private.apply_room_state_cas(uuid, bigint, uuid, uuid, text, jsonb, jsonb, text, jsonb) from authenticated;
+grant execute on function private.apply_room_state_cas(uuid, bigint, uuid, uuid, text, jsonb, jsonb, text, jsonb) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- RLS：客户端只读
 -- ---------------------------------------------------------------------------
 alter table public.rooms enable row level security;
 alter table public.room_members enable row level security;
 alter table public.room_commands enable row level security;
 
--- rooms：只有成员（含观战）可以读取；创建时 host_user_id 必须是自己；
--- 客户端没有任何 UPDATE / DELETE 权限（状态只能经 room-command Edge Function）
 drop policy if exists "rooms_select_members" on public.rooms;
 create policy "rooms_select_members"
   on public.rooms for select
-  using (
-    exists (
-      select 1 from public.room_members m
-      where m.room_id = rooms.id and m.user_id = auth.uid()
-    )
-  );
+  using (private.is_room_member(id));
 
 drop policy if exists "rooms_insert_host" on public.rooms;
-create policy "rooms_insert_host"
-  on public.rooms for insert
-  with check (auth.uid() = host_user_id);
-
--- room_members：同房间成员可读花名册；本人可以加入 / 更新自己的在线信息 / 退出
 drop policy if exists "room_members_select_members" on public.room_members;
 create policy "room_members_select_members"
   on public.room_members for select
-  using (
-    exists (
-      select 1 from public.room_members me
-      where me.room_id = room_members.room_id and me.user_id = auth.uid()
-    )
-  );
+  using (private.is_room_member(room_id));
 
 drop policy if exists "room_members_insert_self" on public.room_members;
-create policy "room_members_insert_self"
-  on public.room_members for insert
-  with check (
-    auth.uid() = user_id
-    and exists (
-      select 1 from public.rooms r
-      where r.id = room_id and r.status = 'WAITING' and r.expires_at > now()
-    )
-  );
-
 drop policy if exists "room_members_update_self" on public.room_members;
-create policy "room_members_update_self"
-  on public.room_members for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
-
 drop policy if exists "room_members_delete_self" on public.room_members;
-create policy "room_members_delete_self"
-  on public.room_members for delete
-  using (auth.uid() = user_id);
-
--- room_commands：同房间成员可读审计；客户端不可写入（无 INSERT/UPDATE 策略）
 drop policy if exists "room_commands_select_members" on public.room_commands;
 create policy "room_commands_select_members"
   on public.room_commands for select
-  using (
-    exists (
-      select 1 from public.room_members m
-      where m.room_id = room_commands.room_id and m.user_id = auth.uid()
-    )
-  );
+  using (private.is_room_member(room_id));
 
 -- ---------------------------------------------------------------------------
--- Realtime：把 rooms / room_members 加入 publication，
--- 客户端通过 postgres_changes 订阅（受 RLS 保护：非成员收不到事件）。
--- 幂等处理：publication 若不存在则先创建（supabase 默认项目已存在）。
+-- Table Grants：显式收回一切写权限，只保留成员 SELECT
+-- ---------------------------------------------------------------------------
+revoke insert, update, delete, truncate on public.rooms from anon, authenticated;
+revoke insert, update, delete, truncate on public.room_members from anon, authenticated;
+revoke insert, update, delete, truncate on public.room_commands from anon, authenticated;
+revoke all on public.join_attempts from anon, authenticated;
+
+grant select on public.rooms to authenticated;
+grant select on public.room_members to authenticated;
+grant select on public.room_commands to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Realtime publication（postgres_changes 受 RLS 保护：非成员收不到事件）
 -- ---------------------------------------------------------------------------
 do $$
 begin

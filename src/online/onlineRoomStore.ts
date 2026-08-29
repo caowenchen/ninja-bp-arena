@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { BattleRule, MatchState, OnlineCommandType, PendingUndo, RoomStatus, Seat } from '@/shared/bp-core'
+import type { BattleRule, MatchState, OnlineCommandType, PendingUndo, RoomStatus, Seat } from '@bp-core'
 import { supabase, isOnlineConfigured } from '@/lib/supabase'
 import { roomApi } from './roomClient'
 import { useNinjaStore } from '@/store/ninjaStore'

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { computeTimerPhaseKey, getPhase } from '@/shared/bp-core'
+import { computeTimerPhaseKey, getPhase } from '@bp-core'
 import { useOnlineRoomStore } from '@/online/onlineRoomStore'
 import { MatchSourceProvider, type MatchSource } from './context'
 

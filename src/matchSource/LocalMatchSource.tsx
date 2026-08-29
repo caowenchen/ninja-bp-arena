@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
-import type { Side } from '@/shared/bp-core'
+import type { Side } from '@bp-core'
 import { useBPStore } from '@/store/bpStore'
 import { useTimerStore } from '@/store/timerStore'
-import { getPhase } from '@/shared/bp-core'
+import { getPhase } from '@bp-core'
 import { MatchSourceProvider, type MatchSource } from './context'
 
 /**

@@ -1,12 +1,16 @@
 import { json, handleOptions } from '../_shared/http.ts'
 import { serviceClient, getUserFromRequest } from '../_shared/supabase.ts'
-import { createMatch, validateBattleRule, type BattleRule } from '../../shared/bp-core/index.ts'
+import { createMatch, validateStoredRule, type BattleRule } from '../_shared/bp-core/index.ts'
 
 /**
  * POST /functions/v1/room-create
- * 创建在线 BP 房间（服务端生成房间码，创建者入座所选阵营）。
- * body: { displayName: string, seat: 'BLUE' | 'RED', rule: BattleRule }
+ * 创建在线 BP 房间（房间码由数据库 RPC 用加密学随机源生成，
+ * 房间 + 房主入座在同一个事务内完成，不会留下孤儿房间）。
+ *
+ * body: { displayName: string, seat: 'BLUE' | 'RED', rule: BattleRule, pool: {id,enabled}[] }
  */
+const MAX_BODY_BYTES = 256 * 1024
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions()
   if (req.method !== 'POST') return json({ error: 'METHOD_NOT_ALLOWED' }, 405)
@@ -16,10 +20,20 @@ Deno.serve(async (req) => {
     const user = await getUserFromRequest(admin, req)
     if (!user) return json({ error: 'NOT_AUTHENTICATED', message: '请先进入在线模式' }, 401)
 
-    const body = await req.json().catch(() => null)
-    const displayName = String(body?.displayName ?? '').trim()
-    const seat = body?.seat
-    const rule = body?.rule as BattleRule | undefined
+    const rawBody = await req.text()
+    if (rawBody.length > MAX_BODY_BYTES) {
+      return json({ error: 'PAYLOAD_TOO_LARGE', message: '请求体积超出限制' }, 413)
+    }
+    const body = JSON.parse(rawBody) as {
+      displayName?: unknown
+      seat?: unknown
+      rule?: unknown
+      pool?: unknown
+    }
+
+    const displayName = String(body.displayName ?? '').trim()
+    const seat = body.seat
+    const rule = body.rule as BattleRule | undefined
 
     if (displayName.length < 1 || displayName.length > 20) {
       return json({ error: 'INVALID_DISPLAY_NAME', message: '显示名称需要 1~20 个字符' }, 400)
@@ -27,56 +41,44 @@ Deno.serve(async (req) => {
     if (seat !== 'BLUE' && seat !== 'RED') {
       return json({ error: 'INVALID_SEAT', message: '创建房间需要选择阵营' }, 400)
     }
-    if (!rule) return json({ error: 'INVALID_RULE', message: '缺少规则模板' }, 400)
-    const ruleErrors = validateBattleRule(rule)
-    if (ruleErrors.length > 0) {
-      return json({ error: 'INVALID_RULE', message: ruleErrors.join('；') }, 400)
+    // 运行时结构校验（结构 + 业务规则双重），不做裸 as 断言
+    if (!rule || !validateStoredRule(rule)) {
+      return json({ error: 'INVALID_RULE', message: '规则模板不合法' }, 400)
     }
 
-    // 忍者池快照：服务端只保留 {id, enabled}（SELECT_NINJA 校验用），
-    // 创建时固化，与本地模式的“开赛后池子即快照”语义一致
-    const rawPool = Array.isArray(body?.pool) ? body.pool : []
+    // 忍者池快照：只保留 {id, enabled}；去重、限长、限量
+    const rawPool = Array.isArray(body.pool) ? body.pool : []
     if (rawPool.length > 2000) {
-      return json({ error: 'POOL_TOO_LARGE', message: '忍者池过大' }, 400)
+      return json({ error: 'POOL_TOO_LARGE', message: '忍者池条目过多（最多 2000）' }, 400)
     }
-    const pool = rawPool
-      .filter((n: unknown) => typeof n === 'object' && n !== null && typeof (n as { id?: unknown }).id === 'string')
-      .map((n: { id: string; enabled?: unknown }) => ({ id: n.id, enabled: n.enabled !== false }))
+    const seenIds = new Set<string>()
+    const pool: { id: string; enabled: boolean }[] = []
+    for (const item of rawPool) {
+      const rec = item as { id?: unknown; enabled?: unknown }
+      const id = typeof rec?.id === 'string' ? rec.id : ''
+      if (id.length < 1 || id.length > 100 || seenIds.has(id)) continue
+      seenIds.add(id)
+      pool.push({ id, enabled: rec.enabled !== false })
+    }
 
-    // 初始权威状态：SETUP 场次（START_MATCH 命令才会正式开始）
+    // 初始权威状态：SETUP 场次（START_MATCH 命令才会正式开始并填充玩家名）
     const match = createMatch(rule, seat === 'BLUE' ? displayName : '', seat === 'RED' ? displayName : '')
 
-    // 房间码：6 位，避开混淆字符；唯一冲突自动重试
-    const charset = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
-    let roomId: string | null = null
-    let code = ''
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      code = Array.from({ length: 6 }, () => charset[Math.floor(Math.random() * charset.length)]).join('')
-      const { data, error } = await admin
-        .from('rooms')
-        .insert({ code, host_user_id: user.id, status: 'WAITING', match_state: match, revision: 0, pool })
-        .select('id')
-        .single()
-      if (!error && data?.id) {
-        roomId = data.id as string
-        break
-      }
-      if (error && error.code !== '23505') {
-        return json({ error: 'DB_ERROR', message: error.message }, 500)
-      }
-      // 23505 = 唯一冲突（房间码重复）→ 换一个码重试
-    }
-    if (!roomId) return json({ error: 'CODE_GEN_FAILED', message: '房间码生成失败，请重试' }, 500)
-
-    const { error: memberError } = await admin.from('room_members').insert({
-      room_id: roomId,
-      user_id: user.id,
-      seat,
-      display_name: displayName,
+    // 原子创建：房间 + 房主入座（任一失败整体回滚）
+    const { data, error: rpcError } = await admin.rpc('create_room_transaction', {
+      p_user_id: user.id,
+      p_seat: seat,
+      p_display_name: displayName,
+      p_match_state: match,
+      p_pool: pool,
     })
-    if (memberError) return json({ error: 'DB_ERROR', message: memberError.message }, 500)
+    if (rpcError || !data || !data[0]) {
+      const message = rpcError?.message ?? '创建失败'
+      if (message.includes('INVALID_POOL')) return json({ error: 'POOL_TOO_LARGE', message: '忍者池不合法' }, 400)
+      return json({ error: 'DB_ERROR', message }, 500)
+    }
 
-    return json({ roomId, code, seat })
+    return json({ roomId: data[0].room_id as string, code: data[0].room_code as string, seat })
   } catch (err) {
     return json({ error: 'INTERNAL', message: err instanceof Error ? err.message : String(err) }, 500)
   }
