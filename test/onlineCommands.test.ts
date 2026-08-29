@@ -422,7 +422,7 @@ describe('在线命令：CLOSE_ROOM', () => {
     const notHost = activeContext({ isHost: false, mySeat: 'RED' }).ctx
     expect(applyRoomCommand(notHost, cmd('CLOSE_ROOM', 12))).toMatchObject({ status: 'REJECTED', code: 'NOT_HOST' })
 
-    const observer = activeContext({ isHost: false, mySeat: 'OBSERVER' })
+    const observer = activeContext({ isHost: false, mySeat: 'OBSERVER' }).ctx
     expect(applyRoomCommand(observer, cmd('CLOSE_ROOM', 12))).toMatchObject({ status: 'REJECTED', code: 'NOT_HOST' })
   })
 })
