@@ -2,6 +2,10 @@
 # 生产部署：supabase link --project-ref <ref> && supabase db push && supabase functions deploy
 project_id = "ninja-bp-arena"
 
+[auth]
+# 在线房间依赖匿名登录（Supabase Anonymous Auth）
+enable_anonymous_sign_ins = true
+
 [functions.room-command]
 verify_jwt = true
 
