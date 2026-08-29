@@ -133,8 +133,8 @@ test.describe.serial('在线 BO3 全流程', () => {
     await expect(blue.getByText(/双方阵容已锁定/)).toBeVisible({ timeout: 15000 })
 
     await clickButton(blue, '进入比赛')
-    await expect(blue.getByText(/本局比赛进行中/)).toBeVisible({ timeout: 15000 })
-    await expect(red.getByText(/本局比赛进行中/)).toBeVisible({ timeout: 15000 })
+    await expect(blue.getByText(/本局比赛进行中/).first()).toBeVisible({ timeout: 15000 })
+    await expect(red.getByText(/本局比赛进行中/).first()).toBeVisible({ timeout: 15000 })
     await clickButton(blue, '蓝方获胜')
     await clickButton(blue, '确认获胜')
     // Host 弹出本局结果；进入 Game 2
