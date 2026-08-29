@@ -42,7 +42,10 @@ async function clickNinja(page: Page, name: string, expectLabel: ExpectLabel) {
     const target = page.getByRole('button', { name: new RegExp(`^${name}（${expectLabel}）`) })
     if ((await target.count()) === 1) return  // 已确认
     const card = page.getByRole('button', { name: new RegExp(`^${name}（可选）`) })
-    if ((await card.count()) === 0) throw new Error(`${name} 卡片未渲染`)
+    if ((await card.count()) === 0) {
+      const stage = await page.locator('section[aria-live="polite"]').textContent()
+      throw new Error(`${name} 卡片未渲染。阶段: ${stage?.slice(0, 120)}`)
+    }
     await card.click()
     await page.waitForTimeout(600)
     if ((await page.getByRole('button', { name: new RegExp(`^${name}（${expectLabel}）`) }).count()) === 0) {
