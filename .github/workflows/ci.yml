@@ -90,9 +90,8 @@ jobs:
           if [ -z "$SERVICE_KEY" ] || [ "$SERVICE_KEY" = "null" ]; then echo "service key 提取失败"; exit 1; fi
           echo "SUPABASE_ANON_KEY=$ANON_KEY" >> $GITHUB_ENV
           echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_KEY" >> $GITHUB_ENV
-          printf 'SUPABASE_URL=http://127.0.0.1:54321
-SUPABASE_SERVICE_ROLE_KEY=%s
-' "$SERVICE_KEY" > supabase/functions/.env
+          echo "SUPABASE_URL=http://127.0.0.1:54321" > supabase/functions/.env
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_KEY" >> supabase/functions/.env
 
       - name: Edge Functions 冒烟（真实 HTTP 调用）
         run: node scripts/functions-smoke.mjs
