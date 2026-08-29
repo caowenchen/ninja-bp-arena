@@ -237,6 +237,28 @@ GitHub Pages 部署：在仓库 Settings → Secrets and variables → Actions �
 
 ## v0.3.1 修复说明
 
+**v0.3.1 已通过 CI 中的 Local Supabase 全链路集成验证**：
+`supabase start` → `db reset`（空库迁移）→ 数据库安全测试（psql，10 项 RLS/权限断言）→
+Edge Functions 真实 HTTP 冒烟（创建/加入/START_MATCH/权限拒绝）→ 在线集成 E2E
+（双 Context 完整 BO3 2:1、回合权限、撤销请求流、RLS attack、幂等、revision 冲突、关闭房间）。
+
+关键修复：
+- **Edge 导入路径**：Shared BP Core 迁至 `supabase/functions/_shared/bp-core`（CLI 推荐位置），
+  前端经 Vite alias `@bp-core` 引用同一实现；`deno check` 进入 CI（edge-check job）
+- **Host 判定**：room-command 读取 `host_user_id`，`isHost = JWT user.id === host`
+  （v0.3.0 字段缺失导致全部 Host 权限失效）
+- **撤销请求**：`pendingAtRevision` = 请求应用后的 revision，期间任何比赛命令自动失效；
+  请求者按 JWT 身份绝不能自确认（房主也不可绕过）
+- **RESET_MATCH**：`restartMatch()` 比分 0:0、清空 Ban/Pick/USED/历史/计时器
+- **玩家名称**：START_MATCH 由服务端从 `room_members.display_name` 填充
+- **RLS 最小权限**：客户端对三张业务表仅 SELECT（INSERT/UPDATE/DELETE 全部 REVOKE）；
+  `private.is_room_member`（SECURITY DEFINER）消除自引用递归；房间创建与「CAS+审计」
+  均为数据库事务 RPC（仅 service_role）；房间码用 pgcrypto 加密学随机源；
+  join 尝试限速表（成功失败都计数）
+- **断线自愈**：Realtime 断线自动重订阅 + 12s 兜底轮询（最终一致）；
+  客户端状态滞后时「未轮到」操作会先 resync 再重试
+- **关闭房间**：CLOSE_ROOM 命令正确置 CLOSED 并同步到所有成员
+
 - **Edge Function 导入路径**：Shared BP Core 正式迁至 `supabase/functions/_shared/bp-core`
   （Supabase CLI 推荐位置），前端通过 Vite alias `@bp-core` 引用同一份实现；
   修复了 `../../shared/...` 从函数目录解析到 `supabase/shared/...` 的路径错误
