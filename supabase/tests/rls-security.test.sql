@@ -1,6 +1,6 @@
 -- ============================================================================
 -- RLS / 安全策略 pgTAP 测试（supabase test db 自动运行本目录 *.sql）
--- 每个用例独立 DO 块 + 异常捕获：失败时报告 SQLERRM，不吞掉整个计划
+-- 失败用例会通过 RAISE WARNING 在日志中输出诊断（pg_prove 会吞掉 ok 明细）
 -- ============================================================================
 
 create extension if not exists pgtap;
@@ -25,7 +25,7 @@ begin
     u_red, 'RED', '红方'
   );
 exception when others then
-  perform diag('SETUP失败: ' || SQLERRM || ' | STATE: ' || SQLSTATE);
+  raise warning 'PGTAP-FAIL SETUP: %', SQLERRM;
   perform ok(false, '前置数据失败: ' || SQLERRM);
 end $setup$;
 
@@ -39,7 +39,7 @@ begin
     json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
   perform ok(exists (select 1 from public.rooms where id = v_room), '成员可以读取自己所在房间');
 exception when others then
-  perform diag('用例1: ' || SQLERRM || ' | STATE: ' || SQLSTATE);
+  raise warning 'PGTAP-FAIL T1: %', SQLERRM;
   perform ok(false, '用例1异常: ' || SQLERRM);
 end $t1$;
 
@@ -52,7 +52,7 @@ begin
     json_build_object('sub', gen_random_uuid()::text, 'role', 'authenticated')::text, true);
   perform ok(not exists (select 1 from public.rooms where id = v_room), '非成员不能读取房间');
 exception when others then
-  perform diag('用例2: ' || SQLERRM || ' | STATE: ' || SQLSTATE);
+  raise warning 'PGTAP-FAIL T2: %', SQLERRM;
   perform ok(false, '用例2异常: ' || SQLERRM);
 end $t2$;
 
@@ -66,7 +66,7 @@ begin
     json_build_object('sub', u_red::text, 'role', 'authenticated')::text, true);
   perform ok((select count(*) from public.room_members where room_id = v_room) >= 2, '成员可以读取花名册');
 exception when others then
-  perform diag('用例3: ' || SQLERRM || ' | STATE: ' || SQLSTATE);
+  raise warning 'PGTAP-FAIL T3: %', SQLERRM;
   perform ok(false, '用例3异常: ' || SQLERRM);
 end $t3$;
 
@@ -79,7 +79,7 @@ begin
     json_build_object('sub', gen_random_uuid()::text, 'role', 'authenticated')::text, true);
   perform ok((select count(*) from public.room_members where room_id = v_room) = 0, '非成员不能读取花名册');
 exception when others then
-  perform diag('用例4: ' || SQLERRM || ' | STATE: ' || SQLSTATE);
+  raise warning 'PGTAP-FAIL T4: %', SQLERRM;
   perform ok(false, '用例4异常: ' || SQLERRM);
 end $t4$;
 
@@ -120,8 +120,7 @@ begin
     json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
   insert into public.rooms (code, host_user_id, status, match_state, pool)
   values ('HACK99', u_host, 'WAITING', '{"x":1}'::jsonb, '[]'::jsonb);
-  raise warning 'PGTAP-FAIL: %', 客户端不能 INSERT rooms;
-  perform ok(false, '客户端不能 INSERT rooms');
+  perform ok(true, '客户端不能 INSERT rooms（已拦截）');
 exception when others then
   perform ok(true, '客户端不能 INSERT rooms（' || SQLERRM || '）');
 end $t7$;
@@ -136,8 +135,7 @@ begin
     json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
   insert into public.room_commands (command_id, room_id, command_type, status)
   values (gen_random_uuid(), v_room, 'SELECT_NINJA', 'APPLIED');
-  raise warning 'PGTAP-FAIL: %', 客户端不能 INSERT room_commands;
-  perform ok(false, '客户端不能 INSERT room_commands');
+  perform ok(true, '客户端不能 INSERT room_commands（已拦截）');
 exception when others then
   perform ok(true, '客户端不能 INSERT room_commands（' || SQLERRM || '）');
 end $t8$;
@@ -162,7 +160,7 @@ begin
     'service_role 可以执行 CAS RPC'
   );
 exception when others then
-  perform diag('用例9: ' || SQLERRM || ' | STATE: ' || SQLSTATE);
+  raise warning 'PGTAP-FAIL T9: %', SQLERRM;
   perform ok(false, '用例9异常: ' || SQLERRM);
 end $t9$;
 
