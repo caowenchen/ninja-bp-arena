@@ -53,6 +53,26 @@ interface OnlineRoomState {
 }
 
 let currentChannel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null
+let pollTimer: number | null = null
+let resubscribeTimer: number | null = null
+let resubscribeAttempts = 0
+let leaving = false
+
+function stopPoll() {
+  if (pollTimer !== null) {
+    window.clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function startPoll(get: () => OnlineRoomState) {
+  stopPoll()
+  // 兜底低频轮询（12s）：Realtime 事件丢失时保证最终一致；不是每秒轮询
+  pollTimer = window.setInterval(() => {
+    const st = get()
+    if (st.roomId && !leaving) void st.refreshSnapshot()
+  }, 12_000)
+}
 
 function deriveMySeat(members: RoomMember[], userId: string | null): Seat | null {
   if (!userId) return null
@@ -128,6 +148,8 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
   /** 进入房间：拉快照 + 订阅 Realtime / Presence（刷新恢复的入口） */
   enterRoom: async (roomId, code) => {
     if (!supabase) return { ok: false, error: '在线模式尚未配置' }
+    leaving = false
+    stopPoll()
     set({ connection: 'connecting', roomId, roomCode: code, lastError: null })
     try {
       const snap = await roomApi.fetchSnapshot(roomId)
@@ -177,7 +199,9 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
         .on('presence', { event: 'leave' }, () => void get().refreshSnapshot())
         .subscribe(async (status: string) => {
           if (status === 'SUBSCRIBED') {
+            resubscribeAttempts = 0
             set({ connection: 'connected' })
+            startPoll(get)
             const me = get().members.find((m) => m.user_id === get().userId)
             if (me) {
               await channel.track({
@@ -186,10 +210,21 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
                 onlineAt: Date.now(),
               } satisfies PresenceEntry)
             }
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
             set({ connection: 'reconnecting' })
-          } else if (status === 'CLOSED') {
-            set({ connection: 'offline' })
+            // 断线自动重订阅（指数规避：3s 起步，最多 5 次；重新订阅成功后归零）
+            if (!leaving && resubscribeAttempts < 5) {
+              resubscribeAttempts += 1
+              const delay = 2000 * resubscribeAttempts
+              if (resubscribeTimer) window.clearTimeout(resubscribeTimer)
+              resubscribeTimer = window.setTimeout(() => {
+                resubscribeTimer = null
+                const st = get()
+                if (st.roomId && st.roomCode && !leaving) {
+                  void st.enterRoom(st.roomId, st.roomCode)
+                }
+              }, delay)
+            }
           }
         })
 
@@ -275,6 +310,12 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
   },
 
   leaveRoom: () => {
+    leaving = true
+    stopPoll()
+    if (resubscribeTimer) {
+      window.clearTimeout(resubscribeTimer)
+      resubscribeTimer = null
+    }
     if (supabase && currentChannel) {
       void supabase.removeChannel(currentChannel)
     }
