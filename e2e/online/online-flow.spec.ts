@@ -141,7 +141,7 @@ test.describe.serial('在线 BO3 全流程', () => {
     await clickButton(blue, '进入 Game 2')
     await expect(blue.getByText(/红方选择阶段/)).toBeVisible({ timeout: 15000 })
     await expect(red.getByText(/红方选择阶段/)).toBeVisible({ timeout: 15000 })
-    await expect(blue.locator('header').first()).toContainText('1:0')
+    await expect(blue.getByTestId('scoreboard')).toContainText('1:0')
   })
 
   test('Game2：Ban 保持、Game1 出场 USED，红方胜', async () => {
@@ -150,40 +150,31 @@ test.describe.serial('在线 BO3 全流程', () => {
     // Game1 出场忍者 USED（两端一致）
     await expect(blue.getByRole('button', { name: /自来也（已使用）/ })).toBeVisible()
     await expect(red.getByRole('button', { name: /纲手（已使用）/ })).toBeVisible()
-    for (const name of GAME2) {
-      await clickNinja(red, name)
-    }
-    // Game2 顺序红1 蓝2 红2 蓝1 —— 上面循环按红1 蓝1…会乱；改为显式顺序
-    await expect(blue.getByText(/双方阵容已锁定|本局比赛进行中|已记录胜负/).first()).toBeVisible()
+    // Game2 Pick：红1 蓝2 红2 蓝1
+    await clickNinja(red, '干柿鬼鲛')
+    await clickNinja(blue, '油女志乃')
+    await clickNinja(blue, '药师兜')
+    await clickNinja(red, '静音')
+    await clickNinja(red, '李洛克')
+    await clickNinja(blue, '天天')
+    await expect(blue.getByText(/双方阵容已锁定/)).toBeVisible({ timeout: 15000 })
+    await clickButton(blue, '进入比赛')
+    await expect(blue.getByText(/本局比赛进行中/).first()).toBeVisible({ timeout: 15000 })
+    await clickButton(blue, '红方获胜')
+    await clickButton(blue, '确认获胜')
+    await clickButton(blue, '进入 Game 3')
+    await expect(blue.getByTestId('scoreboard')).toContainText('1:1')
   })
 
-  test('Game2/3 与最终 2:1', async () => {
-    // 上一用例可能未按正确顺序完成 Game2，这里以实际状态推进：
-    // 若未锁定则按顺序补完 Pick；若已锁定则直接记录胜负。
-    const locked = await blue.getByText(/双方阵容已锁定/).isVisible().catch(() => false)
-    if (!locked) {
-      // 按当前阶段补齐剩余选择（依次尝试 GAME2 中尚未使用的忍者）
-      for (const name of GAME2) {
-        const btn = blue.getByRole('button', { name: new RegExp(`^${name}（可选）`) })
-        if ((await btn.count()) > 0) {
-          await clickNinja(blue, name)
-          await blue.waitForTimeout(600)
-        }
-      }
-    }
-    // Game2 红方获胜（host 记录）
-    const playing = await blue.getByRole('button', { name: '蓝方获胜' }).isVisible().catch(() => false)
-    if (playing) {
-      await clickButton(blue, '红方获胜')
-      await clickButton(blue, '确认获胜')
-      await clickButton(blue, '进入 Game 3')
-    }
-    // Game3
-    for (const name of GAME3) {
-      await clickNinja(blue, name)
-      await blue.waitForTimeout(500)
-    }
-    await expect(blue.getByText(/双方阵容已锁定/)).toBeVisible({ timeout: 20000 })
+  test('Game3 与最终 2:1', async () => {
+    // Game3 Pick：红1 蓝2 红2 蓝1
+    await clickNinja(red, '奈良鹿丸')
+    await clickNinja(blue, '秋道丁次')
+    await clickNinja(blue, '山中井野')
+    await clickNinja(red, '犬冢牙')
+    await clickNinja(red, '飞段')
+    await clickNinja(blue, '角都')
+    await expect(blue.getByText(/双方阵容已锁定/)).toBeVisible({ timeout: 15000 })
     await clickButton(blue, '进入比赛')
     await clickButton(blue, '蓝方获胜')
     await clickButton(blue, '确认获胜')
@@ -191,8 +182,8 @@ test.describe.serial('在线 BO3 全流程', () => {
     await expect(blue.locator('body')).toContainText('蓝方胜利')
     await expect(red.locator('body')).toContainText('蓝方胜利')
     await expect(observer.locator('body')).toContainText('蓝方胜利')
-    await expect(blue.locator('header').first()).toContainText('2:1')
-    await expect(red.locator('header').first()).toContainText('2:1')
+    await expect(blue.getByTestId('scoreboard')).toContainText('2:1')
+    await expect(red.getByTestId('scoreboard')).toContainText('2:1')
   })
 
   test('Host 关闭房间，其他成员看到关闭状态', async () => {

@@ -10,7 +10,7 @@ export function ScoreBoard({ match }: ScoreBoardProps) {
   const phase = getPhase(match)
   const matchOver = match.status === 'MATCH_FINISHED'
   return (
-    <div className="flex items-center gap-2 sm:gap-4">
+    <div data-testid="scoreboard" className="flex items-center gap-2 sm:gap-4">
       <div className="flex flex-col items-end leading-tight sm:items-center">
         <span className="text-xs font-semibold text-side-blue-soft sm:text-sm">{match.bluePlayerName}</span>
         <span className="text-[9px] tracking-widest text-fog-600">BLUE</span>
