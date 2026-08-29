@@ -83,13 +83,16 @@ jobs:
 
       - name: 读取本地密钥并配置 Functions 环境
         run: |
-          supabase status -o json > status.json
-          echo "SUPABASE_ANON_KEY=$(jq -r '.keys.ANON_KEY // .keys.anon_key' status.json)" >> $GITHUB_ENV
-          echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r '.keys.SERVICE_ROLE_KEY // .keys.service_role_key' status.json)" >> $GITHUB_ENV
-          cat > supabase/functions/.env <<EOF
-          SUPABASE_URL=http://127.0.0.1:54321
-          SUPABASE_SERVICE_ROLE_KEY=$(jq -r '.keys.SERVICE_ROLE_KEY // .keys.service_role_key' status.json)
-          EOF
+          supabase status -o json | tee status.json
+          ANON_KEY=$(jq -r '.keys.anon_key // .keys.ANON_KEY // .anon_key // .ANON_KEY' status.json)
+          SERVICE_KEY=$(jq -r '.keys.service_role_key // .keys.SERVICE_ROLE_KEY // .service_role_key // .SERVICE_ROLE_KEY' status.json)
+          if [ -z "$ANON_KEY" ] || [ "$ANON_KEY" = "null" ]; then echo "anon key 提取失败"; exit 1; fi
+          if [ -z "$SERVICE_KEY" ] || [ "$SERVICE_KEY" = "null" ]; then echo "service key 提取失败"; exit 1; fi
+          echo "SUPABASE_ANON_KEY=$ANON_KEY" >> $GITHUB_ENV
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_KEY" >> $GITHUB_ENV
+          printf 'SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_SERVICE_ROLE_KEY=%s
+' "$SERVICE_KEY" > supabase/functions/.env
 
       - name: Edge Functions 冒烟（真实 HTTP 调用）
         run: node scripts/functions-smoke.mjs

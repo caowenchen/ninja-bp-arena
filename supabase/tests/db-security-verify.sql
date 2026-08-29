@@ -13,7 +13,7 @@ declare
   u_red uuid := gen_random_uuid();
 begin
   perform set_config('role', 'service_role', true);
-  perform private.create_room_transaction(
+  perform public.create_room_transaction(
     u_host, 'BLUE', '房主', '{"demo": true}'::jsonb,
     '[{"id":"n1","enabled":true}]'::jsonb
   );
@@ -175,14 +175,14 @@ do $t9$
 begin
   if has_function_privilege(
        'authenticated',
-       'private.apply_room_state_cas(uuid,bigint,uuid,uuid,text,jsonb,jsonb,text,jsonb)',
+       'public.apply_room_state_cas(uuid,bigint,uuid,uuid,text,jsonb,jsonb,text,jsonb)',
        'EXECUTE'
      ) then
     raise exception 'authenticated 仍可执行 CAS RPC';
   end if;
   if not has_function_privilege(
        'service_role',
-       'private.apply_room_state_cas(uuid,bigint,uuid,uuid,text,jsonb,jsonb,text,jsonb)',
+       'public.apply_room_state_cas(uuid,bigint,uuid,uuid,text,jsonb,jsonb,text,jsonb)',
        'EXECUTE'
      ) then
     raise exception 'service_role 不能执行 CAS RPC';
@@ -195,14 +195,14 @@ do $t10$
 begin
   if has_function_privilege(
        'authenticated',
-       'private.create_room_transaction(uuid,text,text,jsonb,jsonb)',
+       'public.create_room_transaction(uuid,text,text,jsonb,jsonb)',
        'EXECUTE'
      ) then
     raise exception 'authenticated 仍可执行创建房间 RPC';
   end if;
   if not has_function_privilege(
        'service_role',
-       'private.create_room_transaction(uuid,text,text,jsonb,jsonb)',
+       'public.create_room_transaction(uuid,text,text,jsonb,jsonb)',
        'EXECUTE'
      ) then
     raise exception 'service_role 不能执行创建房间 RPC';

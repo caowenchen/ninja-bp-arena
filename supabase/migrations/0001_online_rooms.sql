@@ -147,7 +147,7 @@ grant execute on function private.is_room_member(uuid) to authenticated;
 -- 房间码用 pgcrypto 加密学随机源生成；唯一冲突自动重试。
 -- 只允许 service role（Edge Function）调用。
 -- ---------------------------------------------------------------------------
-create or replace function private.create_room_transaction(
+create or replace function public.create_room_transaction(
   p_user_id uuid,
   p_seat text,
   p_display_name text,
@@ -210,7 +210,7 @@ $$;
 -- 返回新 revision；-1 表示 commandId 幂等命中；REVISION_CONFLICT 异常会整体回滚。
 -- 只允许 service role（Edge Function）调用。
 -- ---------------------------------------------------------------------------
-create or replace function private.apply_room_state_cas(
+create or replace function public.apply_room_state_cas(
   p_room_id uuid,
   p_expected_revision bigint,
   p_command_id uuid,
@@ -259,15 +259,15 @@ begin
 end;
 $$;
 
-revoke all on function private.create_room_transaction(uuid, text, text, jsonb, jsonb) from public;
-revoke all on function private.create_room_transaction(uuid, text, text, jsonb, jsonb) from anon;
-revoke all on function private.create_room_transaction(uuid, text, text, jsonb, jsonb) from authenticated;
-grant execute on function private.create_room_transaction(uuid, text, text, jsonb, jsonb) to service_role;
+revoke all on function public.create_room_transaction(uuid, text, text, jsonb, jsonb) from public;
+revoke all on function public.create_room_transaction(uuid, text, text, jsonb, jsonb) from anon;
+revoke all on function public.create_room_transaction(uuid, text, text, jsonb, jsonb) from authenticated;
+grant execute on function public.create_room_transaction(uuid, text, text, jsonb, jsonb) to service_role;
 
-revoke all on function private.apply_room_state_cas(uuid, bigint, uuid, uuid, text, jsonb, jsonb, text, jsonb) from public;
-revoke all on function private.apply_room_state_cas(uuid, bigint, uuid, uuid, text, jsonb, jsonb, text, jsonb) from anon;
-revoke all on function private.apply_room_state_cas(uuid, bigint, uuid, uuid, text, jsonb, jsonb, text, jsonb) from authenticated;
-grant execute on function private.apply_room_state_cas(uuid, bigint, uuid, uuid, text, jsonb, jsonb, text, jsonb) to service_role;
+revoke all on function public.apply_room_state_cas(uuid, bigint, uuid, uuid, text, jsonb, jsonb, text, jsonb) from public;
+revoke all on function public.apply_room_state_cas(uuid, bigint, uuid, uuid, text, jsonb, jsonb, text, jsonb) from anon;
+revoke all on function public.apply_room_state_cas(uuid, bigint, uuid, uuid, text, jsonb, jsonb, text, jsonb) from authenticated;
+grant execute on function public.apply_room_state_cas(uuid, bigint, uuid, uuid, text, jsonb, jsonb, text, jsonb) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- RLS：客户端只读
