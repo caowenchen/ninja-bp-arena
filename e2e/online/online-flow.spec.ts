@@ -31,10 +31,16 @@ async function joinRoom(page: Page, code: string, displayName: string, watch = f
 }
 
 async function clickNinja(page: Page, name: string) {
-  const card = page.getByRole('button', { name: new RegExp(`^${name}（可选）`) })
-  await card.click()
-  // 在线模式：等待服务端确认（卡片脱离“可选”状态），避免下一步比上一步先到
-  await expect(page.getByRole('button', { name: new RegExp(`^${name}（可选）`) })).toHaveCount(0, { timeout: 20000 })
+  // 在线模式：点击后等服务端确认（卡片脱离“可选”）。
+  // 若因 revision 冲突（Realtime 快照滞后）被 409 拒绝，页面会自动 resync，
+  // 这里对整个“点击 → 确认”过程做整体重试。
+  await expect(async () => {
+    const card = page.getByRole('button', { name: new RegExp(`^${name}（可选）`) })
+    if ((await card.count()) === 0) return  // 已确认完成
+    await card.click()
+    await page.waitForTimeout(1000)
+    if ((await card.count()) > 0) throw new Error(`${name} 尚未确认，重试`)
+  }).toPass({ timeout: 45000 })
 }
 
 /** 故意点错方的原始点击：不等待状态变化，仅断言拒绝 Toast */
