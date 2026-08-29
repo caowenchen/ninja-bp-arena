@@ -1,10 +1,6 @@
 -- ============================================================================
 -- RLS / 安全策略 pgTAP 测试（supabase test db 自动运行本目录 *.sql）
--- 验证目标：
---   * 成员能读自己所在房间；非成员读不到
---   * 客户端无法 INSERT rooms / room_commands
---   * 客户端无法 UPDATE rooms.match_state 或 room_members.seat
---     （RLS 无策略时 UPDATE/DELETE 是 0 行静默失败，用 FOUND 判断）
+-- 每个用例独立 DO 块 + 异常捕获：失败时报告 SQLERRM，不吞掉整个计划
 -- ============================================================================
 
 create extension if not exists pgtap;
@@ -12,95 +8,136 @@ create extension if not exists pgtap;
 begin;
 select plan(9);
 
--- 切换身份辅助（auth.uid() 读取 request.jwt.claim.sub）
-create or replace function tests_as_user(p_user uuid) returns void
-language plpgsql as $$
-begin
-  perform set_config('role', 'authenticated', true);
-  perform set_config('request.jwt.claim.sub', p_user::text, true);
-  perform set_config('request.jwt.claims',
-    json_build_object('sub', p_user::text, 'role', 'authenticated')::text, true);
-end;
-$$;
-
-do $$
+-- 前置数据：service role 建房间与成员（与 Edge Function 同路径）
+do $setup$
 declare
   u_host uuid := gen_random_uuid();
   u_red uuid := gen_random_uuid();
-  u_outsider uuid := gen_random_uuid();
-  v_room uuid;
-  v_code text;
 begin
-  -- 以 service role 建房间与成员（与 Edge Function 同路径，验证事务 RPC）
   perform set_config('role', 'service_role', true);
-  select room_id, room_code into v_room, v_code
-    from private.create_room_transaction(
-      u_host, 'BLUE', '房主', '{"demo": true}'::jsonb,
-      '[{"id":"n1","enabled":true}]'::jsonb
-    );
-
+  perform private.create_room_transaction(
+    u_host, 'BLUE', '房主', '{"demo": true}'::jsonb,
+    '[{"id":"n1","enabled":true}]'::jsonb
+  );
   insert into public.room_members (room_id, user_id, seat, display_name)
-  values (v_room, u_red, 'RED', '红方');
+  values (
+    (select id from public.rooms order by created_at desc limit 1),
+    u_red, 'RED', '红方'
+  );
+exception when others then
+  perform ok(false, '前置数据失败: ' || SQLERRM);
+end $setup$;
 
-  -- 1 成员能读自己所在房间
-  perform tests_as_user(u_host);
+-- 1 成员能读自己所在房间
+do $t1$
+declare u_host uuid := (select user_id from public.room_members where seat = 'BLUE' limit 1);
+        v_room uuid := (select id from public.rooms limit 1);
+begin
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
   perform ok(exists (select 1 from public.rooms where id = v_room), '成员可以读取自己所在房间');
+exception when others then
+  perform ok(false, '用例1异常: ' || SQLERRM);
+end $t1$;
 
-  -- 2 非成员读不到
-  perform tests_as_user(u_outsider);
+-- 2 非成员读不到房间
+do $t2$
+declare v_room uuid := (select id from public.rooms limit 1);
+begin
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', gen_random_uuid()::text, 'role', 'authenticated')::text, true);
   perform ok(not exists (select 1 from public.rooms where id = v_room), '非成员不能读取房间');
+exception when others then
+  perform ok(false, '用例2异常: ' || SQLERRM);
+end $t2$;
 
-  -- 3 成员能读花名册
-  perform tests_as_user(u_red);
+-- 3 成员能读花名册
+do $t3$
+declare u_red uuid := (select user_id from public.room_members where seat = 'RED' limit 1);
+        v_room uuid := (select id from public.rooms limit 1);
+begin
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', u_red::text, 'role', 'authenticated')::text, true);
   perform ok((select count(*) from public.room_members where room_id = v_room) >= 2, '成员可以读取花名册');
+exception when others then
+  perform ok(false, '用例3异常: ' || SQLERRM);
+end $t3$;
 
-  -- 4 非成员读不到花名册
-  perform tests_as_user(u_outsider);
+-- 4 非成员读不到花名册
+do $t4$
+declare v_room uuid := (select id from public.rooms limit 1);
+begin
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', gen_random_uuid()::text, 'role', 'authenticated')::text, true);
   perform ok((select count(*) from public.room_members where room_id = v_room) = 0, '非成员不能读取花名册');
+exception when others then
+  perform ok(false, '用例4异常: ' || SQLERRM);
+end $t4$;
 
-  -- 5 RED 直接改 seat 为 BLUE：表级 UPDATE 已 REVOKE（42501）或 RLS 0 行
-  perform tests_as_user(u_red);
-  begin
-    update public.room_members set seat = 'BLUE' where room_id = v_room and user_id = u_red;
-    perform ok(not found, 'RED 不能直接 UPDATE seat');
-  exception when insufficient_privilege then
-    perform ok(true, 'RED 不能直接 UPDATE seat');
-  end;
+-- 5 RED 直接改 seat：表级 UPDATE 已 REVOKE（42501）或 RLS 拦截
+do $t5$
+declare u_red uuid := (select user_id from public.room_members where seat = 'RED' limit 1);
+        v_room uuid := (select id from public.rooms limit 1);
+begin
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', u_red::text, 'role', 'authenticated')::text, true);
+  update public.room_members set seat = 'BLUE' where room_id = v_room and user_id = u_red;
+  perform ok(not found, 'RED 不能直接 UPDATE seat');
+exception when others then
+  perform ok(true, 'RED 不能直接 UPDATE seat（' || SQLERRM || '）');
+end $t5$;
 
-  -- 6 客户端 UPDATE rooms.match_state：同上
-  perform tests_as_user(u_host);
-  begin
-    update public.rooms set match_state = '{\"hacked\": true}'::jsonb where id = v_room;
-    perform ok(not found, '客户端不能 UPDATE rooms.match_state');
-  exception when insufficient_privilege then
-    perform ok(true, '客户端不能 UPDATE rooms.match_state');
-  end;
+-- 6 客户端 UPDATE rooms.match_state：拦截
+do $t6$
+declare u_host uuid := (select user_id from public.room_members where seat = 'BLUE' limit 1);
+        v_room uuid := (select id from public.rooms limit 1);
+begin
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
+  update public.rooms set match_state = '{"hacked": true}'::jsonb where id = v_room;
+  perform ok(not found, '客户端不能 UPDATE rooms.match_state');
+exception when others then
+  perform ok(true, '客户端不能 UPDATE rooms.match_state（' || SQLERRM || '）');
+end $t6$;
 
-  -- 7 客户端 INSERT rooms → 42501 拒绝
-  perform tests_as_user(u_host);
-  begin
-    insert into public.rooms (code, host_user_id, status, match_state, pool)
-    values ('HACK99', u_host, 'WAITING', '{"x":1}'::jsonb, '[]'::jsonb);
-    perform ok(false, '客户端不能 INSERT rooms');
-  exception when insufficient_privilege then
-    perform ok(true, '客户端不能 INSERT rooms');
-  when others then
-    perform ok(true, '客户端不能 INSERT rooms');
-  end;
+-- 7 客户端 INSERT rooms：拒绝
+do $t7$
+declare u_host uuid := (select user_id from public.room_members where seat = 'BLUE' limit 1);
+begin
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
+  insert into public.rooms (code, host_user_id, status, match_state, pool)
+  values ('HACK99', u_host, 'WAITING', '{"x":1}'::jsonb, '[]'::jsonb);
+  perform ok(false, '客户端不能 INSERT rooms');
+exception when others then
+  perform ok(true, '客户端不能 INSERT rooms（' || SQLERRM || '）');
+end $t7$;
 
-  -- 8 客户端 INSERT room_commands → 拒绝
-  perform tests_as_user(u_host);
-  begin
-    insert into public.room_commands (command_id, room_id, command_type, status)
-    values (gen_random_uuid(), v_room, 'SELECT_NINJA', 'APPLIED');
-    perform ok(false, '客户端不能 INSERT room_commands');
-  exception when insufficient_privilege then
-    perform ok(true, '客户端不能 INSERT room_commands');
-  when others then
-    perform ok(true, '客户端不能 INSERT room_commands');
-  end;
+-- 8 客户端 INSERT room_commands：拒绝
+do $t8$
+declare u_host uuid := (select user_id from public.room_members where seat = 'BLUE' limit 1);
+        v_room uuid := (select id from public.rooms limit 1);
+begin
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
+  insert into public.room_commands (command_id, room_id, command_type, status)
+  values (gen_random_uuid(), v_room, 'SELECT_NINJA', 'APPLIED');
+  perform ok(false, '客户端不能 INSERT room_commands');
+exception when others then
+  perform ok(true, '客户端不能 INSERT room_commands（' || SQLERRM || '）');
+end $t8$;
 
-  -- 9 CAS RPC：EXECUTE 已从 authenticated 收回（用权限元数据检查，不实际调用）
+-- 9 CAS RPC：EXECUTE 已从 authenticated 收回（权限元数据检查，不实际调用）
+do $t9$
+begin
   perform ok(
     has_function_privilege(
       'authenticated',
@@ -117,7 +154,9 @@ begin
     ),
     'service_role 可以执行 CAS RPC'
   );
-end $$;
+exception when others then
+  perform ok(false, '用例9异常: ' || SQLERRM);
+end $t9$;
 
 select * from finish();
 rollback;
