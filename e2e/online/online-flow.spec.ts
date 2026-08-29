@@ -30,40 +30,19 @@ async function joinRoom(page: Page, code: string, displayName: string, watch = f
   await page.waitForTimeout(1200)
 }
 
-async function clickNinja(page: Page, name: string) {
-  // 在线模式：点击后等服务端确认（卡片脱离“可选”）。
-  // 若因 revision 冲突（Realtime 快照滞后）被 409 拒绝，页面会自动 resync，
-  // 这里对整个“点击 → 确认”过程做整体重试。
+async function clickNinja(page: Page, name: string, phase?: RegExp) {
+  // 先等待该页进入预期的选择阶段（跨页 Realtime 同步可能滞后）
+  if (phase) {
+    await expect(page.locator('section[aria-live="polite"]')).toContainText(phase, { timeout: 30000 })
+  }
+  // 整体重试：点击 → 等服务端确认（卡片脱离“可选”）；
+  // 若因 revision 冲突被 409 拒绝，页面会自动 resync，这里重试即可
   await expect(async () => {
     const card = page.getByRole('button', { name: new RegExp(`^${name}（可选）`) })
-    if ((await card.count()) === 0) return  // 已确认完成
+    if ((await card.count()) === 0) throw new Error(`${name} 卡片未渲染`)
     await card.click()
-    await page.waitForTimeout(1000)
-    if ((await card.count()) > 0) {
-      const toasts = await page.evaluate(() => {
-        const st = (window as unknown as { __nja?: { getState: () => Record<string, unknown> } }).__nja?.getState()
-        const m = st?.match as { currentGame?: number } | null
-        const phase = m
-          ? (() => {
-              const g = m as unknown as {
-                games: { blue: { bans: string[]; picks: string[] }; red: { bans: string[]; picks: string[] } }[]
-                currentGame: number
-              }
-              const cur = g.games[g.games.length - 1]
-              return `G${g.currentGame} 蓝(B${cur.blue.bans.length}/P${cur.blue.picks.length}) 红(B${cur.red.bans.length}/P${cur.red.picks.length})`
-            })()
-          : 'no-match'
-        const banners = [...document.querySelectorAll('main div, main p')]
-          .map((d) => d.textContent)
-          .filter((t) => t && (t.includes('轮到你操作') || t.includes('等待对方选择')))
-        const toasts = [...document.querySelectorAll('button')]
-          .filter((b) => b.className.includes('pointer-events-auto'))
-          .map((b) => b.textContent)
-          .join(' | ')
-        return `state=${phase} banner=${banners.join('/')} toast=${toasts || '无'}`
-      })
-      throw new Error(`${name} 尚未确认，重试。${toasts}`)
-    }
+    await page.waitForTimeout(800)
+    if ((await card.count()) > 0) throw new Error(`${name} 尚未确认，重试`)
   }).toPass({ timeout: 45000 })
 }
 
@@ -141,12 +120,12 @@ test.describe.serial('在线 BO3 全流程', () => {
 
   test('Game1 完整 BP + 蓝胜', async () => {
     // 红2 蓝1 Ban
-    await clickNinja(red, '旗木卡卡西')
+    await clickNinja(red, '旗木卡卡西', /红方选择阶段/)
     await expect(blue.getByRole('button', { name: /旗木卡卡西（已禁用）/ })).toBeVisible({ timeout: 15000 })
     await clickNinja(red, '宇智波鼬')
-    await clickNinja(blue, '波风水门')
+    await clickNinja(blue, '波风水门', /蓝方选择阶段/)
     // Pick：红1 蓝2 红2 蓝1
-    await clickNinja(red, '自来也')
+    await clickNinja(red, '自来也', /蓝方选择阶段/)
     await clickNinja(blue, '纲手')
     await clickNinja(blue, '大蛇丸')
     await clickNinja(red, '我爱罗')
@@ -173,8 +152,8 @@ test.describe.serial('在线 BO3 全流程', () => {
     await expect(blue.getByRole('button', { name: /自来也（已使用）/ })).toBeVisible()
     await expect(red.getByRole('button', { name: /纲手（已使用）/ })).toBeVisible()
     // Game2 Pick：红1 蓝2 红2 蓝1
-    await clickNinja(red, '干柿鬼鲛')
-    await clickNinja(blue, '油女志乃')
+    await clickNinja(red, '干柿鬼鲛', /红方选择阶段/)
+    await clickNinja(blue, '油女志乃', /蓝方选择阶段/)
     await clickNinja(blue, '药师兜')
     await clickNinja(red, '静音')
     await clickNinja(red, '李洛克')
@@ -190,12 +169,12 @@ test.describe.serial('在线 BO3 全流程', () => {
 
   test('Game3 与最终 2:1', async () => {
     // Game3 Pick：红1 蓝2 红2 蓝1
-    await clickNinja(red, '奈良鹿丸')
-    await clickNinja(blue, '秋道丁次')
+    await clickNinja(red, '奈良鹿丸', /红方选择阶段/)
+    await clickNinja(blue, '秋道丁次', /蓝方选择阶段/)
     await clickNinja(blue, '山中井野')
-    await clickNinja(red, '犬冢牙')
+    await clickNinja(red, '犬冢牙', /红方选择阶段/)
     await clickNinja(red, '飞段')
-    await clickNinja(blue, '角都')
+    await clickNinja(blue, '角都', /蓝方选择阶段/)
     await expect(blue.getByText(/双方阵容已锁定/)).toBeVisible({ timeout: 15000 })
     await clickButton(blue, '进入比赛')
     await clickButton(blue, '蓝方获胜')
