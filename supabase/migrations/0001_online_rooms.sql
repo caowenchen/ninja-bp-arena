@@ -10,7 +10,8 @@
 --   * 本文件必须能从空数据库一次性 supabase db reset 成功。
 -- ============================================================================
 
-create extension if not exists pgcrypto;
+-- Supabase 默认把扩展安装在 extensions schema
+create extension if not exists pgcrypto with schema extensions;
 
 -- ---------------------------------------------------------------------------
 -- private schema：安全辅助函数与 RPC（不通过 PostgREST 暴露）
@@ -181,7 +182,7 @@ begin
     if v_attempt > 6 then
       raise exception 'CODE_GEN_FAILED';
     end if;
-    v_bytes := gen_random_bytes(6);
+    v_bytes := extensions.gen_random_bytes(6);
     v_code := '';
     for v_i in 1..6 loop
       v_code := v_code || substr(v_charset, (get_byte(v_bytes, v_i - 1) % 31) + 1, 1);
