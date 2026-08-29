@@ -102,12 +102,26 @@ export function BPWorkspace() {
         toast('正在确认上一步操作……', 'info')
         return
       }
-      if (!source.isMyTurn) {
-        toast('等待对方选择……', 'info')
-        return
-      }
       if (source.connection === 'offline') {
         toast('连接已断开，正在重新连接', 'error')
+        return
+      }
+      if (!source.isMyTurn) {
+        // 本地状态可能滞后（Realtime 事件在途）：先强制重拉权威快照再判断一次
+        void (async () => {
+          await source.resync?.()
+          if (!useOnlineRoomStore.getState().isMyTurnNow()) {
+            toast('等待对方选择……', 'info')
+            return
+          }
+          const result = await Promise.resolve(source.selectNinja(ninjaId))
+          if (!result.ok && result.reason) {
+            toast(result.reason, 'error')
+            return
+          }
+          toast(`已提交 ${name}，等待确认…`, 'info')
+          setTimeoutActive(false)
+        })()
         return
       }
     }

@@ -54,6 +54,7 @@ export function OnlineMatchSource({ children }: { children: ReactNode }) {
     pendingUndo,
     myUserId: userId,
     onlineNinjaIds,
+    resync: () => useOnlineRoomStore.getState().refreshSnapshot(),
   }
 
   return <MatchSourceProvider value={source}>{children}</MatchSourceProvider>

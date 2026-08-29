@@ -46,6 +46,8 @@ export interface MatchSource {
   myUserId?: string | null
   /** 房间忍者池快照（在线模式下过滤本机忍者池用） */
   onlineNinjaIds?: string[] | null
+  /** 在线模式：怀疑本地状态滞后时强制重拉权威快照 */
+  resync?: () => Promise<void>
 }
 
 const MatchSourceContext = createContext<MatchSource | null>(null)

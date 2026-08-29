@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { BattleRule, MatchState, OnlineCommandType, PendingUndo, RoomStatus, Seat } from '@bp-core'
 import { supabase, isOnlineConfigured } from '@/lib/supabase'
+import { getPhase } from '@bp-core'
 import { roomApi } from './roomClient'
 import { useNinjaStore } from '@/store/ninjaStore'
 import type { ConnectionState, PresenceEntry, RoomMember } from './types'
@@ -42,6 +43,10 @@ interface OnlineRoomState {
   joinRoom: (input: { code: string; seat: 'AUTO' | 'BLUE' | 'RED' | 'OBSERVER'; displayName: string }) => Promise<{ ok: boolean; seat?: Seat; error?: string }>
   enterRoom: (roomId: string, code: string) => Promise<{ ok: boolean; error?: string }>
   sendCommand: (type: OnlineCommandType, payload?: { ninjaId?: string; side?: string }) => Promise<{ ok: boolean; reason?: string }>
+  /** 强制重新拉取权威快照（怀疑本地状态滞后时使用） */
+  resync: () => Promise<void>
+  /** 基于最新权威状态判断当前是否轮到本客户端 */
+  isMyTurnNow: () => boolean
   leaveRoom: () => void
   refreshSnapshot: () => Promise<void>
   clearError: () => void
@@ -258,6 +263,17 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
   },
 
   /** 离开页面：保留席位方便重连（数据库成员记录保留） */
+  resync: async () => {
+    await get().refreshSnapshot()
+  },
+
+  isMyTurnNow: () => {
+    const state = get()
+    if (!state.match || state.roomStatus !== 'ACTIVE' || state.match.status !== 'IN_PROGRESS') return false
+    if (state.mySeat !== 'BLUE' && state.mySeat !== 'RED') return false
+    return getPhase(state.match).side === state.mySeat && !getPhase(state.match).sequenceComplete
+  },
+
   leaveRoom: () => {
     if (supabase && currentChannel) {
       void supabase.removeChannel(currentChannel)
