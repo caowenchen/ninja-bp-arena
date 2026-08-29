@@ -25,6 +25,7 @@ begin
     u_red, 'RED', '红方'
   );
 exception when others then
+  perform diag('SETUP失败: ' || SQLERRM || ' | STATE: ' || SQLSTATE);
   perform ok(false, '前置数据失败: ' || SQLERRM);
 end $setup$;
 
@@ -38,6 +39,7 @@ begin
     json_build_object('sub', u_host::text, 'role', 'authenticated')::text, true);
   perform ok(exists (select 1 from public.rooms where id = v_room), '成员可以读取自己所在房间');
 exception when others then
+  perform diag('用例1: ' || SQLERRM || ' | STATE: ' || SQLSTATE);
   perform ok(false, '用例1异常: ' || SQLERRM);
 end $t1$;
 
@@ -50,6 +52,7 @@ begin
     json_build_object('sub', gen_random_uuid()::text, 'role', 'authenticated')::text, true);
   perform ok(not exists (select 1 from public.rooms where id = v_room), '非成员不能读取房间');
 exception when others then
+  perform diag('用例2: ' || SQLERRM || ' | STATE: ' || SQLSTATE);
   perform ok(false, '用例2异常: ' || SQLERRM);
 end $t2$;
 
@@ -63,6 +66,7 @@ begin
     json_build_object('sub', u_red::text, 'role', 'authenticated')::text, true);
   perform ok((select count(*) from public.room_members where room_id = v_room) >= 2, '成员可以读取花名册');
 exception when others then
+  perform diag('用例3: ' || SQLERRM || ' | STATE: ' || SQLSTATE);
   perform ok(false, '用例3异常: ' || SQLERRM);
 end $t3$;
 
@@ -75,6 +79,7 @@ begin
     json_build_object('sub', gen_random_uuid()::text, 'role', 'authenticated')::text, true);
   perform ok((select count(*) from public.room_members where room_id = v_room) = 0, '非成员不能读取花名册');
 exception when others then
+  perform diag('用例4: ' || SQLERRM || ' | STATE: ' || SQLSTATE);
   perform ok(false, '用例4异常: ' || SQLERRM);
 end $t4$;
 
@@ -155,6 +160,7 @@ begin
     'service_role 可以执行 CAS RPC'
   );
 exception when others then
+  perform diag('用例9: ' || SQLERRM || ' | STATE: ' || SQLSTATE);
   perform ok(false, '用例9异常: ' || SQLERRM);
 end $t9$;
 
