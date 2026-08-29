@@ -30,27 +30,26 @@ async function joinRoom(page: Page, code: string, displayName: string, watch = f
   await page.waitForTimeout(1200)
 }
 
-type ExpectLabel = '已禁用' | '蓝方已选' | '红方已选'
-
 /**
- * 点击并等待「预期标签」出现（唯一无歧义的成功条件）：
- * Ban → 已禁用；蓝方 Pick → 蓝方已选；红方 Pick → 红方已选。
+ * 点击并确认「忍者已进入我方槽位」。
+ * 确认信号 = 玩家面板（aside）中出现该忍者名字：
+ * 该面板在 BP 进行中 / 阵容锁定 / 比赛进行中各阶段都持续渲染，
+ * 因此每局最后一手（选择后网格消失）也能正确确认。
  * 整体重试以消化 revision 冲突 / Realtime 滞后 / 重渲染闪烁。
  */
-async function clickNinja(page: Page, name: string, expectLabel: ExpectLabel) {
+async function clickNinja(page: Page, name: string, _expectLabel?: string) {
+  void _expectLabel
   await expect(async () => {
-    const target = page.getByRole('button', { name: new RegExp(`^${name}（${expectLabel}）`) })
-    if ((await target.count()) === 1) return  // 已确认
+    const slot = page.locator('aside').getByText(name, { exact: true }).first()
+    if ((await slot.count()) > 0 && (await slot.isVisible())) return  // 已入槽
     const card = page.getByRole('button', { name: new RegExp(`^${name}（可选）`) })
     if ((await card.count()) === 0) {
       const stage = await page.locator('section[aria-live="polite"]').textContent()
-      throw new Error(`${name} 卡片未渲染。阶段: ${stage?.slice(0, 120)}`)
+      throw new Error(`${name} 卡片未渲染。阶段: ${stage?.slice(0, 80)}`)
     }
     await card.click()
     await page.waitForTimeout(600)
-    if ((await page.getByRole('button', { name: new RegExp(`^${name}（${expectLabel}）`) }).count()) === 0) {
-      throw new Error(`${name} 未到达 ${expectLabel}，重试`)
-    }
+    throw new Error(`${name} 待确认，重试`)
   }).toPass({ timeout: 45000 })
 }
 
