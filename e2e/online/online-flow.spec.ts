@@ -31,7 +31,10 @@ async function joinRoom(page: Page, code: string, displayName: string, watch = f
 }
 
 async function clickNinja(page: Page, name: string) {
-  await page.getByRole('button', { name: new RegExp(`^${name}`) }).click()
+  const card = page.getByRole('button', { name: new RegExp(`^${name}（可选）`) })
+  await card.click()
+  // 在线模式：等待服务端确认（卡片脱离“可选”状态），避免下一步比上一步先到
+  await expect(page.getByRole('button', { name: new RegExp(`^${name}（可选）`) })).toHaveCount(0, { timeout: 20000 })
 }
 
 async function clickButton(page: Page, text: string) {
