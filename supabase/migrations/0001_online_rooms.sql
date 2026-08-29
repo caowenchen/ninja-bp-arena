@@ -307,6 +307,12 @@ grant select on public.rooms to authenticated;
 grant select on public.room_members to authenticated;
 grant select on public.room_commands to authenticated;
 
+-- service_role（Edge Functions）需要完整读写
+grant select, insert, update, delete on public.rooms to service_role;
+grant select, insert, update, delete on public.room_members to service_role;
+grant select, insert, update, delete on public.room_commands to service_role;
+grant select, insert, update, delete on public.join_attempts to service_role;
+
 -- ---------------------------------------------------------------------------
 -- Realtime publication（postgres_changes 受 RLS 保护：非成员收不到事件）
 -- ---------------------------------------------------------------------------
