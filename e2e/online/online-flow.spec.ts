@@ -39,7 +39,15 @@ async function clickNinja(page: Page, name: string) {
     if ((await card.count()) === 0) return  // 已确认完成
     await card.click()
     await page.waitForTimeout(1000)
-    if ((await card.count()) > 0) throw new Error(`${name} 尚未确认，重试`)
+    if ((await card.count()) > 0) {
+      const toasts = await page.evaluate(() =>
+        [...document.querySelectorAll('button')]
+          .filter((b) => b.className.includes('pointer-events-auto'))
+          .map((b) => b.textContent)
+          .join(' | '),
+      )
+      throw new Error(`${name} 尚未确认，重试。Toast: ${toasts || '无'}`)
+    }
   }).toPass({ timeout: 45000 })
 }
 
