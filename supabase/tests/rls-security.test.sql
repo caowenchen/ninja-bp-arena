@@ -58,15 +58,23 @@ begin
   perform tests_as_user(u_outsider);
   perform ok((select count(*) from public.room_members where room_id = v_room) = 0, '非成员不能读取花名册');
 
-  -- 5 RED 直接改 seat 为 BLUE：RLS 无 UPDATE 策略 → 0 行静默失败
+  -- 5 RED 直接改 seat 为 BLUE：表级 UPDATE 已 REVOKE（42501）或 RLS 0 行
   perform tests_as_user(u_red);
-  update public.room_members set seat = 'BLUE' where room_id = v_room and user_id = u_red;
-  perform ok(not found, 'RED 不能直接 UPDATE seat');
+  begin
+    update public.room_members set seat = 'BLUE' where room_id = v_room and user_id = u_red;
+    perform ok(not found, 'RED 不能直接 UPDATE seat');
+  exception when insufficient_privilege then
+    perform ok(true, 'RED 不能直接 UPDATE seat');
+  end;
 
-  -- 6 客户端 UPDATE rooms.match_state → 0 行
+  -- 6 客户端 UPDATE rooms.match_state：同上
   perform tests_as_user(u_host);
-  update public.rooms set match_state = '{"hacked": true}'::jsonb where id = v_room;
-  perform ok(not found, '客户端不能 UPDATE rooms.match_state');
+  begin
+    update public.rooms set match_state = '{\"hacked\": true}'::jsonb where id = v_room;
+    perform ok(not found, '客户端不能 UPDATE rooms.match_state');
+  exception when insufficient_privilege then
+    perform ok(true, '客户端不能 UPDATE rooms.match_state');
+  end;
 
   -- 7 客户端 INSERT rooms → 42501 拒绝
   perform tests_as_user(u_host);
