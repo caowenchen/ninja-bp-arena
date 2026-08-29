@@ -73,9 +73,9 @@ test.describe.serial('在线 BO3 全流程', () => {
     await expect(red.getByText(/蓝方禁用阶段/)).toBeVisible({ timeout: 20000 })
     await expect(observer.getByText(/蓝方禁用阶段/)).toBeVisible({ timeout: 20000 })
 
-    // 名字进入比赛（§58）
-    await expect(blue.locator('header').first()).toContainText('张三')
-    await expect(red.locator('header').first()).toContainText('李四')
+    // 名字进入比赛（§58）：阵容面板显示服务端填充的名称
+    await expect(blue.locator('main').getByText('张三').first()).toBeVisible({ timeout: 10000 })
+    await expect(red.locator('main').getByText('李四').first()).toBeVisible({ timeout: 10000 })
   })
 
   test('回合权限：红方在蓝方回合被拒，蓝方正常 Ban', async () => {

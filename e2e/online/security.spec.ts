@@ -83,7 +83,7 @@ test.describe.serial('在线安全（服务端边界）', () => {
     })
     expect(created.status).toBe(200)
     roomId = created.json.roomId as string
-    roomCode = created.json.roomCode as string
+    roomCode = created.json.code as string
     expect(roomCode).toMatch(/^[A-HJ-KM-NP-Z2-9]{6}$/)
 
     // 观察者（Observer）
