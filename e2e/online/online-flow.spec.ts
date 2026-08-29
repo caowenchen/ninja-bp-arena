@@ -120,12 +120,12 @@ test.describe.serial('在线 BO3 全流程', () => {
 
   test('Game1 完整 BP + 蓝胜', async () => {
     // 红2 蓝1 Ban
-    await clickNinja(red, '旗木卡卡西', /红方选择阶段/)
+    await clickNinja(red, '旗木卡卡西', /红方(禁用|选择)阶段/)
     await expect(blue.getByRole('button', { name: /旗木卡卡西（已禁用）/ })).toBeVisible({ timeout: 15000 })
     await clickNinja(red, '宇智波鼬')
-    await clickNinja(blue, '波风水门', /蓝方选择阶段/)
+    await clickNinja(blue, '波风水门', /蓝方(禁用|选择)阶段/)
     // Pick：红1 蓝2 红2 蓝1
-    await clickNinja(red, '自来也', /蓝方选择阶段/)
+    await clickNinja(red, '自来也', /蓝方(禁用|选择)阶段/)
     await clickNinja(blue, '纲手')
     await clickNinja(blue, '大蛇丸')
     await clickNinja(red, '我爱罗')
@@ -140,8 +140,8 @@ test.describe.serial('在线 BO3 全流程', () => {
     await clickButton(blue, '确认获胜')
     // Host 弹出本局结果；进入 Game 2
     await clickButton(blue, '进入 Game 2')
-    await expect(blue.getByText(/红方选择阶段/)).toBeVisible({ timeout: 15000 })
-    await expect(red.getByText(/红方选择阶段/)).toBeVisible({ timeout: 15000 })
+    await expect(blue.getByText(/红方(禁用|选择)阶段/)).toBeVisible({ timeout: 15000 })
+    await expect(red.getByText(/红方(禁用|选择)阶段/)).toBeVisible({ timeout: 15000 })
     await expect(blue.getByTestId('scoreboard')).toContainText('1:0')
   })
 
@@ -152,8 +152,8 @@ test.describe.serial('在线 BO3 全流程', () => {
     await expect(blue.getByRole('button', { name: /自来也（已使用）/ })).toBeVisible()
     await expect(red.getByRole('button', { name: /纲手（已使用）/ })).toBeVisible()
     // Game2 Pick：红1 蓝2 红2 蓝1
-    await clickNinja(red, '干柿鬼鲛', /红方选择阶段/)
-    await clickNinja(blue, '油女志乃', /蓝方选择阶段/)
+    await clickNinja(red, '干柿鬼鲛', /红方(禁用|选择)阶段/)
+    await clickNinja(blue, '油女志乃', /蓝方(禁用|选择)阶段/)
     await clickNinja(blue, '药师兜')
     await clickNinja(red, '静音')
     await clickNinja(red, '李洛克')
@@ -169,12 +169,12 @@ test.describe.serial('在线 BO3 全流程', () => {
 
   test('Game3 与最终 2:1', async () => {
     // Game3 Pick：红1 蓝2 红2 蓝1
-    await clickNinja(red, '奈良鹿丸', /红方选择阶段/)
-    await clickNinja(blue, '秋道丁次', /蓝方选择阶段/)
+    await clickNinja(red, '奈良鹿丸', /红方(禁用|选择)阶段/)
+    await clickNinja(blue, '秋道丁次', /蓝方(禁用|选择)阶段/)
     await clickNinja(blue, '山中井野')
-    await clickNinja(red, '犬冢牙', /红方选择阶段/)
+    await clickNinja(red, '犬冢牙', /红方(禁用|选择)阶段/)
     await clickNinja(red, '飞段')
-    await clickNinja(blue, '角都', /蓝方选择阶段/)
+    await clickNinja(blue, '角都', /蓝方(禁用|选择)阶段/)
     await expect(blue.getByText(/双方阵容已锁定/)).toBeVisible({ timeout: 15000 })
     await clickButton(blue, '进入比赛')
     await clickButton(blue, '蓝方获胜')
