@@ -12,12 +12,12 @@ const URL_ = process.env.VITE_SUPABASE_URL
 const KEY_ = process.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
 /** 建立一个匿名登录的普通用户客户端（相当于任意真实用户） */
-function anonUser() {
+async function anonUser() {
   const client = createClient(
     process.env.VITE_SUPABASE_URL!,
     process.env.VITE_SUPABASE_PUBLISHABLE_KEY!,
   )
-  const { data, error } = client.auth.signInAnonymously ? await client.auth.signInAnonymously() : { data: null, error: null }
+  const { data, error } = await client.auth.signInAnonymously()
   expect(error).toBeNull()
   return { client, token: data!.session!.access_token, userId: data!.session!.user.id }
 }
