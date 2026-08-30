@@ -210,6 +210,61 @@ begin
   raise notice 'CHECK-PASS: 创建房间 RPC 仅 service_role 可执行';
 end $t10$;
 
+-- 11 v0.3.2 幂等唯一约束：UNIQUE(room_id, user_id, command_id)，command_id 不再全局唯一
+do $t11$
+declare
+  v_room_a uuid;
+  v_room_b uuid;
+  v_cmd uuid := gen_random_uuid();
+  v_user uuid := gen_random_uuid();
+begin
+  perform set_config('role', 'service_role', true);
+  v_room_a := (select id from public.rooms order by created_at desc limit 1);
+  perform public.create_room_transaction(
+    gen_random_uuid(), 'RED', '他房', '{"demo": true}'::jsonb, '[]'::jsonb
+  );
+  v_room_b := (select id from public.rooms order by created_at desc limit 1);
+
+  insert into public.room_commands (command_id, room_id, user_id, command_type, status)
+  values (v_cmd, v_room_a, v_user, 'START_MATCH', 'APPLIED');
+
+  -- 同 (room, user, command)：唯一冲突
+  begin
+    insert into public.room_commands (command_id, room_id, user_id, command_type, status)
+    values (v_cmd, v_room_a, v_user, 'START_MATCH', 'APPLIED');
+    raise exception '同 (room_id,user_id,command_id) 居然可以重复插入';
+  exception when unique_violation then
+    raise notice 'CHECK-PASS: (room_id,user_id,command_id) 唯一约束生效';
+  end;
+
+  -- 同 command_id 在另一房间另一用户：允许存在（范围化幂等），
+  -- 跨房间 / 跨用户复用判定由 Edge Function 完成，数据库层不再全局唯一
+  insert into public.room_commands (command_id, room_id, user_id, command_type, status)
+  values (v_cmd, v_room_b, gen_random_uuid(), 'START_MATCH', 'REJECTED');
+  raise notice 'CHECK-PASS: command_id 不再全局唯一（跨房间可各自存在）';
+
+  delete from public.room_commands where command_id = v_cmd;
+  delete from public.rooms where id = v_room_b;
+end $t11$;
+
+-- 12 v0.3.2 通用限速表 action_attempts（join_attempts 已演化）
+do $t12$
+declare v_col text;
+begin
+  if to_regclass('public.join_attempts') is not null then
+    raise exception 'join_attempts 应已演化（重命名）为 action_attempts';
+  end if;
+  if to_regclass('public.action_attempts') is null then
+    raise exception '缺少 action_attempts 限速表（0002 迁移未应用？）';
+  end if;
+  select column_name into v_col from information_schema.columns
+    where table_schema = 'public' and table_name = 'action_attempts' and column_name = 'action_type';
+  if v_col is null then
+    raise exception 'action_attempts 缺少 action_type 列';
+  end if;
+  raise notice 'CHECK-PASS: action_attempts 限速表（含 action_type）已就绪';
+end $t12$;
+
 do $done$
 begin
   raise notice 'ALL-DB-SECURITY-CHECKS-PASSED';

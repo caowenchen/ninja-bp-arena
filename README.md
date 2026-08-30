@@ -3,7 +3,7 @@
 > Ninja BP Arena —— 玩家制作的非官方赛事 BP 辅助工具。
 > **本工具与游戏官方无隶属或合作关系**；内置忍者数据与规则均为示例，不代表官方名单或官方规则。
 
-一个纯前端、无后端的《火影忍者手游》武斗赛 Ban/Pick 模拟器：完整支持 BO3 三局两胜、Ban 继承、忍者跨局消耗、可刷新恢复的倒计时、撤销/重做、历史复盘、JSON 导入导出与移动端适配。
+一款《火影忍者手游》武斗赛 Ban/Pick 模拟器：本地模式纯前端离线可用，完整支持 BO3 三局两胜、Ban 继承、忍者跨局消耗、可刷新恢复的倒计时、撤销/重做、历史复盘、JSON 导入导出与移动端适配；可选的双人在线 BP 房间基于 Supabase（服务端权威 + Realtime 同步）。
 
 **在线使用**：https://caowenchen.github.io/ninja-bp-arena/ （GitHub Pages 自动部署）
 
@@ -173,7 +173,7 @@ interface BattleRule {
 2. 秘卷 / 通灵 BP
 3. 赛事数据与复盘统计
 
-## 在线 BP 设置（v0.3.0，可选）
+## 在线 BP 设置（可选，自 v0.3.0 起逐步完善）
 
 本地 BP 仍然完全离线可用。双人实时 BP 房间基于 Supabase（Postgres + Realtime + Edge Functions + Anonymous Auth）。
 
@@ -191,8 +191,12 @@ supabase link --project-ref <你的项目 ref>
 supabase db push           # 应用 supabase/migrations/ 下的全部迁移
 ```
 
-迁移内容：`rooms` / `room_members` / `room_commands` 三张表、唯一索引（房间码、席位唯一）、
-RLS 策略（成员可读、本人席位写入、客户端禁止修改 match_state）、Realtime publication。
+迁移内容：
+- `0001_online_rooms.sql`：`rooms` / `room_members` / `room_commands` 三张表、唯一索引（房间码、席位唯一）、
+  RLS 策略与权限（成员可读、客户端对业务表只读、客户端禁止修改 match_state）、Realtime publication。
+  **已发布的迁移视为 immutable，不再修改。**
+- `0002_security_hardening.sql`：room_commands 幂等约束收紧为 `UNIQUE(room_id, user_id, command_id)`；
+  `join_attempts` 演化为通用限速表 `action_attempts`（含 `action_type`：JOIN_ROOM / CREATE_ROOM）。
 
 本地开发可用 `supabase start`（本地栈），不要把生产库用于自动化测试。
 
@@ -204,7 +208,7 @@ supabase functions deploy room-join
 supabase functions deploy room-command
 ```
 
-三个函数共用 `shared/bp-core`（与浏览器完全同一套 BP 逻辑），服务端权威：
+三个函数共用 `supabase/functions/_shared/bp-core`（Shared BP Core，与浏览器完全同一套 BP 逻辑），服务端权威：
 验证回合与席位、执行 BP 规则、以 revision CAS 写回状态（commandId 幂等）。
 
 ### 3.5 忍者池容量
@@ -260,6 +264,26 @@ GitHub Pages 部署：在仓库 Settings → Secrets and variables → Actions �
 - 在线模式的撤销 = 撤销最后一步 Ban/Pick，且需对方确认（本地模式撤销能力更强）
 - 胜负记录/进入下一局/重置 仅房主可执行（防双提交），后续可加双方确认
 
+
+## v0.3.2 安全加固说明
+
+**在线安全最终加固**（授权先于幂等 / 滥用防护 / 池容量合法性）：
+
+- **幂等授权顺序（P0）**：room-command 严格按「JWT → 解析校验 → load room → 成员授权 → 幂等检查 → 执行」顺序处理；
+  授权永远先于幂等响应——跨房间 / 跨用户 / payload 不一致重用 commandId 一律返回
+  `IDEMPOTENCY_KEY_REUSE`（或先返回 `NOT_MEMBER`），绝不因 commandId 曾存在而跳过授权或泄漏他房状态
+- **幂等范围收紧**：数据库唯一约束从 `command_id` 全局唯一改为 `UNIQUE(room_id, user_id, command_id)`
+  （0002 迁移）；同 scope 但 command_type / 规范化 payload 不一致同样判定为复用
+- **忍者池容量合法性**：Shared BP Core 新增 `getMinimumRequiredPoolSize(rule)` 按规则推导完成整场比赛
+  所需最少可用忍者（默认武斗赛 BO3 = **22**：4 Ban + 6 Pick × 3 局，USED 跨局锁定）；
+  room-create 不足返回 `INSUFFICIENT_NINJA_POOL { required, available }`，本地开赛同样前置阻止
+- **滥用防护**：room-create 服务端限速（每 auth user 5 次/60s + 20 次/24h，`action_attempts` 通用限速表）；
+  单房间观战者上限 50（超出返回 `ROOM_OBSERVER_LIMIT`）
+- **Rejected command 审计并发安全**：重复 rejected commandId 走 upsert（忽略冲突），始终返回稳定业务响应，revision 不变
+- **test:online 不可静默跳过**：`playwright.online.config.ts` 在配置加载阶段校验
+  `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY`，缺失直接抛错非零退出；环境不满足只有 FAIL，没有 SKIP
+- **测试收紧**：CAS 并发断言「恰好 1 个 APPLIED + 1 个 REVISION_CONFLICT，revision 只 +1、history 只 +1」；
+  新增 Cross-room / Cross-user / payload 不一致攻击测试（全部走真实 Edge Function HTTP）
 
 ## v0.3.1 修复说明
 
