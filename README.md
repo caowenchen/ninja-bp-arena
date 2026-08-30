@@ -196,7 +196,8 @@ supabase db push           # 应用 supabase/migrations/ 下的全部迁移
   RLS 策略与权限（成员可读、客户端对业务表只读、客户端禁止修改 match_state）、Realtime publication。
   **已发布的迁移视为 immutable，不再修改。**
 - `0002_security_hardening.sql`：room_commands 幂等约束收紧为 `UNIQUE(room_id, user_id, command_id)`；
-  `join_attempts` 演化为通用限速表 `action_attempts`（含 `action_type`：JOIN_ROOM / CREATE_ROOM）。
+  `join_attempts` 演化为通用限速表 `action_attempts`（含 `action_type`：JOIN_ROOM / CREATE_ROOM）；
+  `apply_room_state_cas` 审计更新按幂等范围定位（`create or replace`，权限不变）。
 
 本地开发可用 `supabase start`（本地栈），不要把生产库用于自动化测试。
 
