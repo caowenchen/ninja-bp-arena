@@ -8,10 +8,6 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test'
  * 必须连接 Supabase Local / 测试项目运行（npm run test:online）。
  */
 
-const URL_ = process.env.VITE_SUPABASE_URL
-const KEY_ = process.env.VITE_SUPABASE_PUBLISHABLE_KEY
-test.skip(!URL_ || !KEY_, 'VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY 未配置（本文件只应在 Supabase 集成环境运行）')
-
 let roomCode = ''
 
 async function createRoom(page: Page, displayName: string) {

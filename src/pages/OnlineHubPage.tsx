@@ -30,7 +30,11 @@ export default function OnlineHubPage() {
     const result = await createRoom({ displayName: displayName || (seat === 'BLUE' ? '蓝方玩家' : '红方玩家'), seat, rule })
     setCreating(false)
     if (!result.ok || !result.code) {
-      toast(result.error ?? '创建失败', 'error')
+      if (result.error?.includes('INSUFFICIENT_NINJA_POOL')) {
+        toast('当前忍者池可用数量不足以完成整场比赛，请先补充忍者池', 'error')
+      } else {
+        toast(result.error ?? '创建失败', 'error')
+      }
       return
     }
     navigate(`/room/${result.code}`)

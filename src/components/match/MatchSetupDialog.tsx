@@ -6,6 +6,8 @@ import { useBPStore } from '@/store/bpStore'
 import { useSettingsStore } from '@/store/settingsStore'
 import { DEFAULT_RULE, cloneRule } from '@/data/defaultRules'
 import { describeSequence } from '@/engine/ruleEngine'
+import { getMinimumRequiredPoolSize } from '@bp-core'
+import { useNinjaStore } from '@/store/ninjaStore'
 import type { MatchState } from '@/types/match'
 
 interface MatchSetupDialogProps {
@@ -25,6 +27,11 @@ export function MatchSetupDialog({ open, onClose, unfinished }: MatchSetupDialog
   const rule = useMemo(() => cloneRule(customRule ?? DEFAULT_RULE), [customRule])
   const [blueName, setBlueName] = useState('')
   const [redName, setRedName] = useState('')
+  // 注意：selector 不能每次返回新对象（会触发无限重渲染），这里选 ninjas 数组后计算
+  const ninjas = useNinjaStore((s) => s.ninjas)
+  const enabledCount = new Set(ninjas.filter((n) => n.enabled).map((n) => n.id)).size
+  const requiredPool = getMinimumRequiredPoolSize(rule)
+  const poolInsufficient = enabledCount < requiredPool
 
   const handleStart = () => {
     startNewMatch(blueName, redName)
@@ -45,7 +52,9 @@ export function MatchSetupDialog({ open, onClose, unfinished }: MatchSetupDialog
           <button
             type="button"
             onClick={handleStart}
-            className="rounded-lg bg-side-blue px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-side-blue/85"
+            disabled={poolInsufficient}
+            title={poolInsufficient ? '可用忍者数量不足' : undefined}
+            className="rounded-lg bg-side-blue px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-side-blue/85 disabled:cursor-not-allowed disabled:opacity-40"
           >
             开始比赛
           </button>
@@ -96,6 +105,12 @@ export function MatchSetupDialog({ open, onClose, unfinished }: MatchSetupDialog
             BO{rule.bestOf} · 先胜 {rule.winsRequired} 局 · {rule.timerEnabled ? `每步倒计时 ${rule.timerSeconds} 秒` : '无倒计时'} ·
             可在「规则设置」中修改
           </p>
+          {poolInsufficient && (
+            <p className="mt-1.5 rounded border border-side-red/40 bg-side-red/10 p-2 text-[11px] text-side-red-soft">
+              当前忍者池只有 {enabledCount} 名可用忍者，该规则完成整场比赛至少需要 {requiredPool} 名。
+              请先在「忍者池管理」补充或启用忍者。
+            </p>
+          )}
         </div>
       </div>
     </Dialog>

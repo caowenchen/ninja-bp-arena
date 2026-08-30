@@ -41,8 +41,8 @@ src/
 │   ├── ninja/      # NinjaGrid（状态筛选）、NinjaCard、NinjaAvatar（占位图容错）
 │   ├── match/      # ScoreBoard、GameResultDialog、MatchResult、MatchSetupDialog
 │   └── common/     # Dialog（焦点管理）、ConfirmDialog、Toast、NavBar、ErrorBoundary
-├── engine/         # ★ 核心业务（不依赖 React/DOM）
-│   ├── bpEngine.ts        # 状态机：阶段推导、canSelectNinja、Ban/Pick/胜负/换局
+├── engine/（转发层，实际实现见 supabase/functions/_shared/bp-core）         # ★ 核心业务（不依赖 React/DOM）
+│   ├── bpEngine.ts        # 状态机（实现见 supabase/functions/_shared/bp-core）
 │   ├── ruleEngine.ts      # 序列展开与规则校验
 │   ├── matchValidator.ts  # 持久化数据运行时校验（MatchState / Ninja / Rule / Timer）
 │   ├── historyEngine.ts   # 撤销/重做快照栈、历史分组、赛果文本
@@ -167,11 +167,11 @@ interface BattleRule {
 
 引擎约定：`banSequence` 内只放 BAN 步骤、`pickSequence` 内只放 PICK 步骤，Ban 全部完成后进入 Pick；双方 Pick 总数需相等。保存前会完整校验。
 
-## 未来计划（第三阶段）
+## 未来计划
 
-1. 双人实时 BP 房间（房间号 / 实时同步 / OB 观战页）
-2. 真实忍者数据与素材管理
-3. 秘卷 / 通灵 BP
+1. 真实忍者数据库与素材系统
+2. 秘卷 / 通灵 BP
+3. 赛事数据与复盘统计
 
 ## 在线 BP 设置（v0.3.0，可选）
 
@@ -207,6 +207,20 @@ supabase functions deploy room-command
 三个函数共用 `shared/bp-core`（与浏览器完全同一套 BP 逻辑），服务端权威：
 验证回合与席位、执行 BP 规则、以 revision CAS 写回状态（commandId 幂等）。
 
+### 3.5 忍者池容量
+
+房间创建时会校验「可用忍者数量」是否足以完成整场比赛（最坏情况）。
+默认武斗赛 BO3 需要 **22** 名可用忍者（4 Ban + 6 Pick × 3 局）。
+不足时返回 `INSUFFICIENT_NINJA_POOL { required, available }`；
+本地开赛同样会阻止并提示。容量需求由
+`supabase/functions/_shared/bp-core/poolRequirement.ts` 统一推导。
+
+### 3.6 滥用防护
+
+创建 / 加入房间均按 auth user 做服务端限速（CREATE 5/60s + 20/24h；JOIN 15/60s），
+单房间观战者上限 50。限速基于 auth user，Anonymous Auth 可重建身份绕过——
+生产环境请开启 CAPTCHA（见上方注意事项）。
+
 ### 4. 配置前端环境变量
 
 ```bash
@@ -221,12 +235,24 @@ GitHub Pages 部署：在仓库 Settings → Secrets and variables → Actions �
 
 ### 5. 安全模型速览
 
+- 客户端对在线业务表（rooms / room_members / room_commands）**只读**——
+  创建房间、加入席位、BP 操作、关闭房间全部通过 Edge Functions（service role）完成
 - 客户端只能发送语义命令（`SELECT_NINJA` / `SET_GAME_WINNER` / `REQUEST_UNDO`…），
   Side 一律由服务端按 `room_members` + BP 引擎阶段推导，不信任客户端
-- `rooms.match_state` 客户端不可写（RLS 无 UPDATE 策略），唯一写入口是 `room-command`
+- `rooms.match_state` 客户端不可写（RLS + GRANT 双重约束），唯一写入口是 `room-command`
   （service role，密钥只在 Deno.env）
-- 所有状态更新带 `revision` 乐观锁；重复 `commandId` 幂等；房间 24h 过期
+- 授权严格先于幂等：跨房间 / 跨用户重用 commandId 返回 `IDEMPOTENCY_KEY_REUSE`，
+  绝不返回目标房间状态
+- 幂等范围 = (room_id, user_id, command_id) 且校验 command_type / payload 一致性
+- 所有状态更新带 `revision` 乐观锁；房间 24h 过期
 - Realtime 走 RLS 保护的 postgres_changes，非成员收不到事件；Presence 仅展示在线状态
+- 断线自动重订阅 + 低频兜底轮询保证最终一致
+
+### 生产安全注意事项
+
+基于 auth user 的 rate limit 只能防基础滥用：Anonymous Auth 用户可以反复重建匿名身份。
+生产公开使用建议在 Supabase Dashboard 为 Anonymous Auth 开启 CAPTCHA / Turnstile。
+当前 rate limit 不能阻止所有机器人。
 
 ### 6. 已知限制
 
@@ -280,3 +306,15 @@ Edge Functions 真实 HTTP 冒烟（创建/加入/START_MATCH/权限拒绝）→
 - **真实 Supabase 验证进入 CI**：`supabase-integration` job 启动 Local Supabase →
   `db reset` 验证迁移 → pgTAP RLS 安全测试 → Edge Functions HTTP 冒烟 → 在线集成 E2E
   （完整 BO3 / 权限 / 撤销 / RLS attack / 幂等 / revision 冲突）
+
+
+### Supabase 后端手动部署后的最短验证流程
+
+1. 打开前端 → 「在线 BP」→ 匿名登录成功
+2. 创建房间 → 返回 6 位房间码
+3. 第二浏览器打开邀请链接 → 加入成功
+4. Host 开始比赛 → 双方进入 Ban 阶段
+5. 双端实时看到对方的操作
+
+以上全部通过才能认为 Online BP 后端可用。
+Pages 部署成功不代表 Supabase 后端已部署或可用。

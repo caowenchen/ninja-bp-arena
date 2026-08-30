@@ -6,19 +6,20 @@ import { expect, test } from '@playwright/test'
  * 而不只是测试 UI 禁用状态。必须连接真实（Local）Supabase 运行。
  */
 
+import { createClient } from '@supabase/supabase-js'
+
 const URL_ = process.env.VITE_SUPABASE_URL
 const KEY_ = process.env.VITE_SUPABASE_PUBLISHABLE_KEY
-// 这两个变量由 playwright.online.config 的 webServer / CI 注入，但 Node 侧直接读取进程环境
-test.skip(!URL_ || !KEY_, 'VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY 未配置（本文件只应在 Supabase 集成环境运行）')
-
-const { createClient } = await import('@supabase/supabase-js')
 
 /** 建立一个匿名登录的普通用户客户端（相当于任意真实用户） */
-async function anonUser() {
-  const client = createClient(URL_!, KEY_!)
-  const { data, error } = await client.auth.signInAnonymously()
+function anonUser() {
+  const client = createClient(
+    process.env.VITE_SUPABASE_URL!,
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY!,
+  )
+  const { data, error } = client.auth.signInAnonymously ? await client.auth.signInAnonymously() : { data: null, error: null }
   expect(error).toBeNull()
-  return { client, token: data.session!.access_token, userId: data.session!.user.id }
+  return { client, token: data!.session!.access_token, userId: data!.session!.user.id }
 }
 
 // 直接 HTTP 调用 Edge Function（绕开前端 UI）
@@ -244,5 +245,219 @@ test.describe.serial('在线安全（服务端边界）', () => {
     expect(applied.length + conflicted.length).toBeGreaterThanOrEqual(1)
     const final = await host.client.from('rooms').select('match_state, revision').eq('id', roomId).single()
     expect(final.data!.revision).toBeGreaterThanOrEqual(revision)
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// v0.3.2：幂等授权顺序 / 范围化幂等 / 容量与滥用防护
+// ---------------------------------------------------------------------------
+
+function normalizeRule() {
+  return makeRule()
+}
+
+const X = crypto.randomUUID()
+
+test.describe.serial('v0.3.2 安全加固', () => {
+  let roomA: string
+  let codeA: string
+  let userA: Awaited<ReturnType<typeof anonUser>>
+  let revisionA: number
+
+  test('准备：创建 ROOM_A 并执行一个合法命令（commandId=X）', async () => {
+    userA = await anonUser()
+    const created = await invoke('room-create', userA.token, {
+      displayName: 'A房主',
+      seat: 'BLUE',
+      rule: normalizeRule(),
+      pool: POOL,
+    })
+    expect(created.status).toBe(200)
+    roomA = created.json.roomId as string
+    codeA = created.json.code as string
+
+    // START_MATCH 使 commandId = X 成为 APPLIED
+    const started = await invoke('room-command', userA.token, {
+      roomId: roomA,
+      commandId: X,
+      expectedRevision: 0,
+      type: 'START_MATCH',
+    })
+    expect(started.status).toBe(200)
+    revisionA = started.json.revision as number
+  })
+
+  test('Cross-room attack：User A 携带 X 访问非成员房间 → NOT_MEMBER，不泄漏数据', async () => {
+    // User B 创建 ROOM_B（独立房间）
+    const userB = await anonUser()
+    const createdB = await invoke('room-create', userB.token, {
+      displayName: 'B房主',
+      seat: 'BLUE',
+      rule: normalizeRule(),
+      pool: POOL,
+    })
+    expect(createdB.status).toBe(200)
+    const roomB = createdB.json.roomId as string
+
+    // User A（非 ROOM_B 成员）携带已在 ROOM_A 应用的 X 访问 ROOM_B
+    const attack = await invoke('room-command', userA.token, {
+      roomId: roomB,
+      commandId: X,
+      expectedRevision: 0,
+      type: 'START_MATCH',
+    })
+    // 授权必须先于幂等：NOT_MEMBER，绝不返回 ROOM_B 的 match_state / revision
+    expect(attack.status).toBe(400)
+    expect(attack.json.error ?? attack.json.code).toBe('NOT_MEMBER')
+    expect(attack.json.match).toBeUndefined()
+    expect(attack.json.revision).toBeUndefined()
+  })
+
+  test('Cross-user attack：同房间 RED 重用 BLUE 的 X → IDEMPOTENCY_KEY_REUSE', async () => {
+    // 红方加入 ROOM_A
+    const red = await anonUser()
+    const joined = await invoke('room-join', red.token, { code: codeA, seat: 'RED', displayName: '红方' })
+    expect(joined.status).toBe(200)
+
+    // RED 重用 BLUE 的 X（同房间、不同用户）
+    const reuse = await invoke('room-command', red.token, {
+      roomId: roomA,
+      commandId: X,
+      expectedRevision: revisionA,
+      type: 'START_MATCH',
+    })
+    expect(reuse.status).toBe(400)
+    expect(reuse.json.error ?? reuse.json.code).toBe('IDEMPOTENCY_KEY_REUSE')
+  })
+
+  test('Mismatch payload：同 commandId 同房间同用户但不同动作 → IDEMPOTENCY_KEY_REUSE', async () => {
+    // X 此前是 START_MATCH；现在换成 SELECT_NINJA
+    const mismatch = await invoke('room-command', userA.token, {
+      roomId: roomA,
+      commandId: X,
+      expectedRevision: revisionA,
+      type: 'SELECT_NINJA',
+      payload: { ninjaId: 'e2e-ninja-01' },
+    })
+    expect(mismatch.status).toBe(400)
+    expect(mismatch.json.error ?? mismatch.json.code).toBe('IDEMPOTENCY_KEY_REUSE')
+  })
+
+  test('Idempotent valid retry：同 commandId 同 payload → 200 idempotent，状态不再变化', async () => {
+    // 合法重试：新 commandId（X 已被 REUSE 判定占用，用新 ID 做同 payload 重试）
+    const commandId = crypto.randomUUID()
+    const current = await host.client.from('rooms').select('revision').eq('id', roomA).single()
+    const revision = current.data!.revision as number
+
+    const first = await invoke('room-command', userA.token, {
+      roomId: roomA,
+      commandId,
+      expectedRevision: revision,
+      type: 'ENTER_GAME',
+    })
+    expect(first.status).toBe(200)
+    const historyLen = (first.json.match as { history: unknown[] }).history.length
+
+    const second = await invoke('room-command', userA.token, {
+      roomId: roomA,
+      commandId,
+      expectedRevision: revision,
+      type: 'ENTER_GAME',
+    })
+    expect(second.status).toBe(200)
+    expect(second.json.idempotent).toBe(true)
+    expect((second.json.match as { history: unknown[] }).history.length).toBe(historyLen)
+    expect(second.json.revision).toBe(first.json.revision)
+  })
+
+  test('Exactly one CAS winner：并发同 revision，恰好一个 200 一个 409，状态只前进一次', async () => {
+    const current = await userA.client.from('rooms').select('revision, match_state').eq('id', roomA).single()
+    const revision = current.data!.revision as number
+    const historyLen = (current.data!.match_state as { history: unknown[] }).history.length
+
+    const body = {
+      roomId: roomA,
+      expectedRevision: revision,
+      type: 'SELECT_NINJA',
+      payload: { ninjaId: 'e2e-ninja-07' },
+    }
+    const [r1, r2] = await Promise.all([
+      invoke('room-command', userA.token, { ...body, commandId: crypto.randomUUID() }),
+      invoke('room-command', userA.token, { ...body, commandId: crypto.randomUUID() }),
+    ])
+    const applied = [r1, r2].filter((r) => r.status === 200)
+    const conflicted = [r1, r2].filter((r) => r.status === 409)
+    expect(applied.length).toBe(1)
+    expect(conflicted.length).toBe(1)
+
+    const final = await userA.client.from('rooms').select('revision, match_state').eq('id', roomA).single()
+    expect(final.data!.revision).toBe(revision + 1)
+    expect((final.data!.match_state as { history: unknown[] }).history.length).toBe(historyLen + 1)
+  })
+
+  test('Pool insufficient：可用忍者不足 → INSUFFICIENT_NINJA_POOL（required/available）', async () => {
+    const user = await anonUser()
+    // 只给 5 个可用忍者（默认规则需要 22）
+    const tinyPool = POOL.slice(0, 5).map((n) => ({ ...n, enabled: true }))
+    const res = await invoke('room-create', user.token, {
+      displayName: '小池房主',
+      seat: 'BLUE',
+      rule: normalizeRule(),
+      pool: tinyPool,
+    })
+    expect(res.status).toBe(400)
+    expect(res.json.error).toBe('INSUFFICIENT_NINJA_POOL')
+    expect(res.json.required).toBe(22)
+    expect(res.json.available).toBe(5)
+  })
+
+  test('Create room rate limit：60 秒内第 6 个房间 → 429', async () => {
+    const user = await anonUser()
+    for (let i = 0; i < 5; i += 1) {
+      const res = await invoke('room-create', user.token, {
+        displayName: `限速${i}`,
+        seat: 'BLUE',
+        rule: normalizeRule(),
+        pool: POOL,
+      })
+      expect(res.status).toBe(200)
+    }
+    const sixth = await invoke('room-create', user.token, {
+      displayName: '限速5',
+      seat: 'BLUE',
+      rule: normalizeRule(),
+      pool: POOL,
+    })
+    expect(sixth.status).toBe(429)
+    expect(sixth.json.error).toBe('RATE_LIMITED')
+  })
+
+  test('Observer limit：第 51 个观战者 → ROOM_OBSERVER_LIMIT', async () => {
+    const user = await anonUser()
+    const created = await invoke('room-create', user.token, {
+      displayName: '满观战房主',
+      seat: 'BLUE',
+      rule: normalizeRule(),
+      pool: POOL,
+    })
+    expect(created.status).toBe(200)
+    const obsCode = created.json.code as string
+
+    // 红方入座（否则 AUTO 全部变成观战之外还需要补位）
+    const red = await anonUser()
+    await invoke('room-join', red.token, { code: obsCode, seat: 'RED', displayName: '红' })
+
+    // 50 个观战者
+    for (let i = 0; i < 50; i += 1) {
+      const obs = await anonUser()
+      const joined = await invoke('room-join', obs.token, { code: obsCode, seat: 'OBSERVER', displayName: `观${i}` })
+      expect(joined.status).toBe(200)
+    }
+    // 第 51 个 → 拒绝
+    const overflow = await anonUser()
+    const denied = await invoke('room-join', overflow.token, { code: obsCode, seat: 'OBSERVER', displayName: '超员' })
+    expect(denied.status).toBe(400)
+    expect(denied.json.error).toBe('ROOM_OBSERVER_LIMIT')
   })
 })

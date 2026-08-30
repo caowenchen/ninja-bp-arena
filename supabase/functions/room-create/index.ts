@@ -1,6 +1,6 @@
 import { json, handleOptions } from '../_shared/http.ts'
 import { serviceClient, getUserFromRequest } from '../_shared/supabase.ts'
-import { createMatch, validateStoredRule, type BattleRule } from '../_shared/bp-core/index.ts'
+import { countEnabledNinjas, createMatch, getMinimumRequiredPoolSize, validateStoredRule, type BattleRule } from '../_shared/bp-core/index.ts'
 
 /**
  * POST /functions/v1/room-create
@@ -10,6 +10,10 @@ import { createMatch, validateStoredRule, type BattleRule } from '../_shared/bp-
  * body: { displayName: string, seat: 'BLUE' | 'RED', rule: BattleRule, pool: {id,enabled}[] }
  */
 const MAX_BODY_BYTES = 256 * 1024
+// 创建房间限速：每 auth user 60 秒最多 5 个房间 / 24 小时最多 20 个
+const CREATE_RATE_WINDOW_MS = 60_000
+const CREATE_RATE_MAX = 5
+const CREATE_DAILY_MAX = 20
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions()
@@ -61,8 +65,45 @@ Deno.serve(async (req) => {
       pool.push({ id, enabled: rec.enabled !== false })
     }
 
+    // 容量合法性：可用忍者必须足够完成整场比赛（最坏情况），否则拒绝创建
+    const available = countEnabledNinjas(pool)
+    const required = getMinimumRequiredPoolSize(rule)
+    if (available < required) {
+      return json(
+        { error: 'INSUFFICIENT_NINJA_POOL', message: '忍者池可用数量不足以完成整场比赛', required, available },
+        400,
+      )
+    }
+
     // 初始权威状态：SETUP 场次（START_MATCH 命令才会正式开始并填充玩家名）
     const match = createMatch(rule, seat === 'BLUE' ? displayName : '', seat === 'RED' ? displayName : '')
+
+    // 创建限速：60 秒 5 个 / 24 小时 20 个（按 auth user，成败都计数）
+    const { error: attemptError } = await admin.from('action_attempts').insert({
+      user_id: user.id,
+      action_type: 'CREATE_ROOM',
+    })
+    if (attemptError) return json({ error: 'DB_ERROR', message: attemptError.message }, 500)
+    const windowStart = new Date(Date.now() - CREATE_RATE_WINDOW_MS).toISOString()
+    const dayStart = new Date(Date.now() - 24 * 3600_000).toISOString()
+    const { count: recent } = await admin
+      .from('action_attempts')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('action_type', 'CREATE_ROOM')
+      .gt('attempted_at', windowStart)
+    if ((recent ?? 0) > CREATE_RATE_MAX) {
+      return json({ error: 'RATE_LIMITED', message: '创建过于频繁，请稍后再试' }, 429)
+    }
+    const { count: daily } = await admin
+      .from('action_attempts')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('action_type', 'CREATE_ROOM')
+      .gt('attempted_at', dayStart)
+    if ((daily ?? 0) > CREATE_DAILY_MAX) {
+      return json({ error: 'RATE_LIMITED', message: '今日创建房间数量已达上限' }, 429)
+    }
 
     // 原子创建：房间 + 房主入座（任一失败整体回滚）
     const { data, error: rpcError } = await admin.rpc('create_room_transaction', {

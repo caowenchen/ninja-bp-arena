@@ -13,12 +13,19 @@ import {
 /**
  * POST /functions/v1/room-command —— 在线 BP 的唯一写入口。
  *
- * 流程：JWT → 用户 → 幂等检查 → 房间/成员/席位 → Shared BP Core 验证并应用
- *       → private.apply_room_state_cas（revision CAS + 审计，同一事务）。
+ * 流程（顺序即安全边界）：
+ *   1. JWT Authentication
+ *   2. 解析并校验 roomId / commandId
+ *   3. load target room（存在性）
+ *   4. 查询 JWT user 在目标房间的 member —— 授权必须先于幂等响应，
+ *      绝不因「commandId 曾存在」而跳过授权或返回他房数据
+ *   5. 幂等检查（范围化：command_id + room_id + user_id + type + payload）
+ *   6. Shared BP Core 验证并应用
+ *   7. private.apply_room_state_cas（revision CAS + 审计，同一事务）
  *
  * 响应：
  * - 200 { status:'APPLIED', match, revision, roomStatus, pendingUndo }
- * - 400 { status:'REJECTED', code, message, revision, match }
+ * - 400 { status:'REJECTED' | error:'IDEMPOTENCY_KEY_REUSE', ... }
  * - 409 { error:'REVISION_CONFLICT', message, match, revision }
  */
 
@@ -37,6 +44,15 @@ interface RoomRow {
   host_user_id: string
 }
 
+interface AuditRow {
+  room_id: string
+  user_id: string | null
+  command_type: string
+  payload: unknown
+  status: 'APPLIED' | 'REJECTED'
+  reject_code: string | null
+}
+
 async function loadRoom(admin: ReturnType<typeof serviceClient>, roomId: string): Promise<RoomRow | null> {
   const { data, error } = await admin
     .from('rooms')
@@ -45,6 +61,15 @@ async function loadRoom(admin: ReturnType<typeof serviceClient>, roomId: string)
     .maybeSingle()
   if (error) throw new Error(error.message)
   return (data as RoomRow) ?? null
+}
+
+/** 规范化 payload 用于幂等一致性比较（键排序，消除序列化差异） */
+function normalizePayload(payload: unknown): string {
+  if (payload === null || payload === undefined) return 'null'
+  if (typeof payload !== 'object') return JSON.stringify(payload)
+  const rec = payload as Record<string, unknown>
+  const keys = Object.keys(rec).filter((k) => rec[k] !== undefined).sort()
+  return '{' + keys.map((k) => `${k}:${normalizePayload(rec[k])}`).join(',') + '}'
 }
 
 Deno.serve(async (req) => {
@@ -74,34 +99,13 @@ Deno.serve(async (req) => {
     if (!UUID_RE.test(commandId)) return json({ error: 'INVALID_COMMAND', message: 'commandId 非法' }, 400)
     if (!type) return json({ error: 'INVALID_COMMAND', message: '缺少命令类型' }, 400)
 
-    // ---- 幂等：同一 commandId 只执行一次 ----
-    const { data: previous } = await admin
-      .from('room_commands')
-      .select('status, reject_code')
-      .eq('command_id', commandId)
-      .maybeSingle()
-    if (previous) {
-      const room = await loadRoom(admin, roomId)
-      if (previous.status === 'APPLIED' && room) {
-        return json({
-          status: 'APPLIED',
-          idempotent: true,
-          match: room.match_state,
-          revision: room.revision,
-          roomStatus: room.status,
-          pendingUndo: room.pending_action ?? null,
-        })
-      }
-      return json(
-        { status: 'REJECTED', code: previous.reject_code ?? 'INVALID_COMMAND', message: '该命令此前已被拒绝', revision: room?.revision ?? 0 },
-        400,
-      )
-    }
+    const normalizedPayload = normalizePayload(body.payload ?? null)
 
-    // ---- 房间与成员 ----
+    // ---- 1. 目标房间（先于幂等：授权优先）----
     const room = await loadRoom(admin, roomId)
     if (!room) return json({ error: 'ROOM_NOT_FOUND', message: '房间不存在' }, 404)
 
+    // ---- 2. 当前 JWT user 的成员资格（授权核心）----
     const { data: member } = await admin
       .from('room_members')
       .select('seat')
@@ -123,7 +127,46 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ---- 运行 Shared BP Core（与浏览器同一套规则；Side 由阶段推导，不信任客户端）----
+    // ---- 3. 幂等检查（已通过授权：room + member 确认后才允许返回任何状态）----
+    // 范围化语义：commandId 必须绑定同一 room + 同一 user；
+    // 同 scope 但 type/payload 不一致同样视为复用攻击。
+    const { data: priorRows } = await admin
+      .from('room_commands')
+      .select('room_id, user_id, command_type, payload, status, reject_code')
+      .eq('command_id', commandId)
+    const prior = (priorRows as AuditRow[] | null) ?? []
+    if (prior.length > 0) {
+      const mine = prior.find((r) => r.room_id === roomId && r.user_id === user.id)
+      if (!mine) {
+        // 同一 commandId 曾被其他房间 / 其他用户使用
+        return json(
+          { error: 'IDEMPOTENCY_KEY_REUSE', message: '请求标识已被其他操作使用，请重试' },
+          400,
+        )
+      }
+      if (mine.command_type !== type || normalizePayload(mine.payload) !== normalizedPayload) {
+        return json(
+          { error: 'IDEMPOTENCY_KEY_REUSE', message: '请求标识已被其他操作使用，请重试' },
+          400,
+        )
+      }
+      if (mine.status === 'APPLIED') {
+        return json({
+          status: 'APPLIED',
+          idempotent: true,
+          match: room.match_state,
+          revision: room.revision,
+          roomStatus: room.status,
+          pendingUndo: room.pending_action ?? null,
+        })
+      }
+      return json(
+        { status: 'REJECTED', code: mine.reject_code ?? 'INVALID_COMMAND', message: '该命令此前已被拒绝', revision: room.revision, match: room.match_state },
+        400,
+      )
+    }
+
+    // ---- 4. 运行 Shared BP Core（与浏览器同一套规则；Side 由阶段推导，不信任客户端）----
     const outcome = applyRoomCommand(
       {
         match: room.match_state as never,
@@ -157,16 +200,22 @@ Deno.serve(async (req) => {
     )
 
     if (outcome.status === 'REJECTED') {
-      await admin.from('room_commands').insert({
-        command_id: commandId,
-        room_id: roomId,
-        user_id: user.id,
-        command_type: type,
-        expected_revision: expectedRevision,
-        payload: body.payload ?? null,
-        status: 'REJECTED',
-        reject_code: outcome.code,
-      })
+      // 审计写入：并发重复 commandId 时 upsert 冲突跳过，仍返回稳定业务响应
+      await admin
+        .from('room_commands')
+        .upsert(
+          {
+            command_id: commandId,
+            room_id: roomId,
+            user_id: user.id,
+            command_type: type,
+            expected_revision: expectedRevision,
+            payload: body.payload ?? null,
+            status: 'REJECTED',
+            reject_code: outcome.code,
+          },
+          { onConflict: 'room_id,user_id,command_id', ignoreDuplicates: true },
+        )
       return json(
         { status: 'REJECTED', code: outcome.code, message: outcome.message, revision: room.revision, match: room.match_state },
         400,
@@ -203,7 +252,7 @@ Deno.serve(async (req) => {
 
     const newRevision = Number(casResult)
     if (newRevision === -1) {
-      // 幂等命中（并发重复 commandId）：返回当前权威状态，不产生第二次变化
+      // 幂等命中（并发重复 commandId，同 room 同 user）：返回当前权威状态
       const fresh = await loadRoom(admin, roomId)
       return json({
         status: 'APPLIED',

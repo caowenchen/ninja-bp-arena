@@ -1,7 +1,7 @@
 {
   "name": "ninja-bp-arena",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "description": "忍界 BP · 火影忍者手游武斗赛 BP 模拟器（玩家制作的非官方工具）",
   "scripts": {

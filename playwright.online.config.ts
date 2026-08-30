@@ -5,10 +5,22 @@ import { defineConfig } from '@playwright/test'
  *
  * 与本地 E2E 分离：
  * - `npm run test:online` 必须在 Supabase 环境可用时运行；
- *   如果 Supabase 不可用，这些用例会自然失败——绝不静默 skip。
+ *   环境变量缺失时在配置加载阶段直接抛错（进程非零退出），
+ *   绝不进入测试后全部 skip 然后显示成功。
  * - 环境变量：VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY
  *   （Supabase Local 默认 http://127.0.0.1:54321 + 本地 anon key）
  */
+const supabaseUrl = process.env.VITE_SUPABASE_URL
+const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error(
+    'Online integration requires a running Supabase environment.\n' +
+      'Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY before running `npm run test:online`.\n' +
+      'Local stack: supabase start, then VITE_SUPABASE_URL=http://127.0.0.1:54321 and the local anon key.',
+  )
+}
+
 export default defineConfig({
   testDir: './e2e/online',
   timeout: 120_000,
@@ -25,8 +37,8 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
-      VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? '',
-      VITE_SUPABASE_PUBLISHABLE_KEY: process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? '',
+      VITE_SUPABASE_URL: supabaseUrl,
+      VITE_SUPABASE_PUBLISHABLE_KEY: supabaseKey,
     },
   },
   projects: [

@@ -128,6 +128,14 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
       const entered = await get().enterRoom(identity.roomId, identity.code)
       return entered.ok ? { ok: true, code: identity.code } : { ok: false, error: entered.error }
     } catch (err) {
+      const code = (err as { code?: string }).code
+      const extra = (err as { payload?: { required?: number; available?: number } }).payload
+      if (code === 'INSUFFICIENT_NINJA_POOL' && extra) {
+        return {
+          ok: false,
+          error: `当前忍者池只有 ${extra.available} 名可用忍者，该规则完成整场比赛至少需要 ${extra.required} 名。请先补充忍者池。`,
+        }
+      }
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   },

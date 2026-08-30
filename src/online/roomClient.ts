@@ -48,6 +48,7 @@ async function callFunction<T>(name: string, body: Record<string, unknown>): Pro
     }
     throw Object.assign(new Error(payload.message ?? error.message), {
       code: payload.error ?? payload.code ?? 'NETWORK',
+      payload: payload as Record<string, unknown>,
     })
   }
   return data as T

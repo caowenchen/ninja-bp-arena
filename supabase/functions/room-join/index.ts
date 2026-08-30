@@ -12,6 +12,8 @@ import { serviceClient, getUserFromRequest } from '../_shared/supabase.ts'
 const MAX_BODY_BYTES = 8 * 1024
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 15
+/** 单房间观战者上限：防止 room_members 无限增长（BLUE/RED 不受影响） */
+const MAX_OBSERVERS_PER_ROOM = 50
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions()
@@ -42,15 +44,16 @@ Deno.serve(async (req) => {
 
     // ---- 服务端限速：无论房间码对错，每次尝试都计数 ----
     const { error: attemptError } = await admin
-      .from('join_attempts')
-      .insert({ user_id: user.id })
+      .from('action_attempts')
+      .insert({ user_id: user.id, action_type: 'JOIN_ROOM' })
     if (attemptError) return json({ error: 'DB_ERROR', message: attemptError.message }, 500)
 
     const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString()
     const { count: recentAttempts } = await admin
-      .from('join_attempts')
+      .from('action_attempts')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
+      .eq('action_type', 'JOIN_ROOM')
       .gt('attempted_at', windowStart)
     if ((recentAttempts ?? 0) > RATE_LIMIT_MAX) {
       return json({ error: 'RATE_LIMITED', message: '尝试过于频繁，请稍后再试' }, 429)
@@ -58,7 +61,7 @@ Deno.serve(async (req) => {
     // 顺带清理一小时前的旧记录，防止表无限增长
     if ((recentAttempts ?? 0) % 5 === 1) {
       await admin
-        .from('join_attempts')
+        .from('action_attempts')
         .delete()
         .lt('attempted_at', new Date(Date.now() - 3600_000).toISOString())
     }
@@ -95,6 +98,7 @@ Deno.serve(async (req) => {
     // ---- 席位协商：请求优先，被占或 AUTO 时挑空位，都满则观战 ----
     const { data: members } = await admin.from('room_members').select('seat').eq('room_id', room.id)
     const taken = new Set((members ?? []).map((m) => m.seat as string))
+    const observerCount = (members ?? []).filter((m) => m.seat === 'OBSERVER').length
 
     let resolved: 'BLUE' | 'RED' | 'OBSERVER'
     if (seat === 'OBSERVER') {
@@ -103,6 +107,9 @@ Deno.serve(async (req) => {
       resolved = seat
     } else {
       resolved = !taken.has('BLUE') ? 'BLUE' : !taken.has('RED') ? 'RED' : 'OBSERVER'
+    }
+    if (resolved === 'OBSERVER' && observerCount >= MAX_OBSERVERS_PER_ROOM) {
+      return json({ error: 'ROOM_OBSERVER_LIMIT', message: '该房间观战人数已满' }, 400)
     }
 
     const { error: insertError } = await admin.from('room_members').insert({
