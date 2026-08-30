@@ -285,6 +285,7 @@ test.describe.serial('v0.3.2 安全加固', () => {
       expectedRevision: 0,
       type: 'START_MATCH',
     })
+    if (started.status !== 200) console.log('DEBUG START:', JSON.stringify(started.json))
     expect(started.status).toBe(200)
     revisionA = started.json.revision as number
   })
