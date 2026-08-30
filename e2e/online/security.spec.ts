@@ -354,7 +354,8 @@ test.describe.serial('v0.3.2 安全加固', () => {
       roomId: roomA,
       commandId,
       expectedRevision: revision,
-      type: 'ENTER_GAME',
+      type: 'SELECT_NINJA',
+      payload: { ninjaId: 'e2e-ninja-01' },
     })
     expect(first.status).toBe(200)
     const historyLen = (first.json.match as { history: unknown[] }).history.length
@@ -363,7 +364,8 @@ test.describe.serial('v0.3.2 安全加固', () => {
       roomId: roomA,
       commandId,
       expectedRevision: revision,
-      type: 'ENTER_GAME',
+      type: 'SELECT_NINJA',
+      payload: { ninjaId: 'e2e-ninja-01' },
     })
     expect(second.status).toBe(200)
     expect(second.json.idempotent).toBe(true)
