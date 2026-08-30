@@ -354,7 +354,7 @@ test.describe.serial('v0.3.2 安全加固', () => {
   test('Idempotent valid retry：同 commandId 同 payload → 200 idempotent，状态不再变化', async () => {
     // 合法重试：新 commandId（X 已被 REUSE 判定占用，用新 ID 做同 payload 重试）
     const commandId = crypto.randomUUID()
-    const current = await host.client.from('rooms').select('revision').eq('id', roomA).single()
+    const current = await userA.client.from('rooms').select('revision').eq('id', roomA).single()
     const revision = current.data!.revision as number
 
     const first = await invoke('room-command', userA.token, {
