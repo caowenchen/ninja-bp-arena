@@ -357,6 +357,7 @@ test.describe.serial('v0.3.2 安全加固', () => {
       type: 'SELECT_NINJA',
       payload: { ninjaId: 'e2e-ninja-01' },
     })
+    if (first.status !== 200) console.log('DEBUG first:', JSON.stringify(first.json))
     expect(first.status).toBe(200)
     const historyLen = (first.json.match as { history: unknown[] }).history.length
 
