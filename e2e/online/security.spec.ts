@@ -273,6 +273,7 @@ test.describe.serial('v0.3.2 安全加固', () => {
       rule: normalizeRule(),
       pool: POOL,
     })
+    if (created.status !== 200) console.log('DEBUG create:', JSON.stringify(created.json))
     expect(created.status).toBe(200)
     roomA = created.json.roomId as string
     codeA = created.json.code as string
