@@ -263,6 +263,7 @@ test.describe.serial('v0.3.2 安全加固', () => {
   let roomA: string
   let codeA: string
   let userA: Awaited<ReturnType<typeof anonUser>>
+  let userRed: Awaited<ReturnType<typeof anonUser>>
   let revisionA: number
 
   test('准备：创建 ROOM_A、红方加入、START_MATCH（commandId=X APPLIED）', async () => {
@@ -279,8 +280,8 @@ test.describe.serial('v0.3.2 安全加固', () => {
     codeA = created.json.code as string
 
     // 红方加入（双方就座后才能开始）
-    const red = await anonUser()
-    const joined = await invoke('room-join', red.token, { code: codeA, seat: 'RED', displayName: '红方' })
+    userRed = await anonUser()
+    const joined = await invoke('room-join', userRed.token, { code: codeA, seat: 'RED', displayName: '红方' })
     expect(joined.status).toBe(200)
 
     // START_MATCH 使 commandId = X 成为 APPLIED（revision 0 → 1）
@@ -393,8 +394,8 @@ test.describe.serial('v0.3.2 安全加固', () => {
       payload: { ninjaId: 'e2e-ninja-07' },
     }
     const [r1, r2] = await Promise.all([
-      invoke('room-command', userA.token, { ...body, commandId: crypto.randomUUID() }),
-      invoke('room-command', userA.token, { ...body, commandId: crypto.randomUUID() }),
+      invoke('room-command', userRed.token, { ...body, commandId: crypto.randomUUID() }),
+      invoke('room-command', userRed.token, { ...body, commandId: crypto.randomUUID() }),
     ])
     const applied = [r1, r2].filter((r) => r.status === 200)
     const conflicted = [r1, r2].filter((r) => r.status === 409)
