@@ -265,7 +265,7 @@ test.describe.serial('v0.3.2 安全加固', () => {
   let userA: Awaited<ReturnType<typeof anonUser>>
   let revisionA: number
 
-  test('准备：创建 ROOM_A 并执行一个合法命令（commandId=X）', async () => {
+  test('准备：创建 ROOM_A、红方加入、START_MATCH（commandId=X APPLIED）', async () => {
     userA = await anonUser()
     const created = await invoke('room-create', userA.token, {
       displayName: 'A房主',
@@ -278,7 +278,12 @@ test.describe.serial('v0.3.2 安全加固', () => {
     roomA = created.json.roomId as string
     codeA = created.json.code as string
 
-    // START_MATCH 使 commandId = X 成为 APPLIED
+    // 红方加入（双方就座后才能开始）
+    const red = await anonUser()
+    const joined = await invoke('room-join', red.token, { code: codeA, seat: 'RED', displayName: '红方' })
+    expect(joined.status).toBe(200)
+
+    // START_MATCH 使 commandId = X 成为 APPLIED（revision 0 → 1）
     const started = await invoke('room-command', userA.token, {
       roomId: roomA,
       commandId: X,
