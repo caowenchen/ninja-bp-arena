@@ -127,6 +127,11 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ---- 授权拦截（必须先于幂等检查：非成员绝不返回任何房间状态）----
+    if (!member && user.id !== room.host_user_id) {
+      return json({ error: 'NOT_MEMBER', message: '你还没有加入这个房间' }, 400)
+    }
+
     // ---- 3. 幂等检查（已通过授权：room + member 确认后才允许返回任何状态）----
     // 范围化语义：commandId 必须绑定同一 room + 同一 user；
     // 同 scope 但 type/payload 不一致同样视为复用攻击。
