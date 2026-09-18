@@ -1,5 +1,6 @@
 import type { MatchState } from './types.ts'
 import { SIDE_TEXT, ACTION_TEXT, type BPAction } from './types.ts'
+import { RESOURCE_TYPE_LABEL } from './resourceRegistry.ts'
 
 /**
  * 历史引擎：
@@ -95,13 +96,18 @@ export function groupHistoryByGame(m: MatchState): HistoryGroup[] {
 export function formatActionText(action: BPAction, nameOf: (id: string) => string): string {
   const side = SIDE_TEXT[action.side]
   const act = ACTION_TEXT[action.action]
-  return `${side} ${act} ${nameOf(action.ninjaId)}`
+  const resourceType = action.resourceType ?? 'NINJA'
+  return `${side} ${act}${RESOURCE_TYPE_LABEL[resourceType]} ${nameOf(action.resourceId ?? action.ninjaId)}`
 }
 
 export const SIDE_NAME: Record<'BLUE' | 'RED', string> = SIDE_TEXT
 
 /** 生成纯文本赛果（复制 / 分享用） */
-export function buildShareText(m: MatchState, nameOf: (id: string) => string): string {
+export function buildShareText(
+  m: MatchState,
+  nameOf: (id: string) => string,
+  resourceNameOf: (type: 'SECRET_SCROLL' | 'SUMMON', id: string) => string = (_type, id) => id,
+): string {
   const lines: string[] = []
   const finished = m.status === 'MATCH_FINISHED'
   const winnerSide = m.score.blue >= m.rule.winsRequired ? 'BLUE' : m.score.red >= m.rule.winsRequired ? 'RED' : null
@@ -125,6 +131,18 @@ export function buildShareText(m: MatchState, nameOf: (id: string) => string): s
     }
     lines.push(`蓝方：${game.blue.picks.map((id, i) => `${i + 1}. ${nameOf(id)}`).join('　') || '无'}`)
     lines.push(`红方：${game.red.picks.map((id, i) => `${i + 1}. ${nameOf(id)}`).join('　') || '无'}`)
+    const blueScrolls = game.blue.resources?.SECRET_SCROLL?.picks ?? []
+    const redScrolls = game.red.resources?.SECRET_SCROLL?.picks ?? []
+    const blueSummons = game.blue.resources?.SUMMON?.picks ?? []
+    const redSummons = game.red.resources?.SUMMON?.picks ?? []
+    if (blueScrolls.length || redScrolls.length) {
+      lines.push(`蓝方秘卷：${blueScrolls.map((id) => resourceNameOf('SECRET_SCROLL', id)).join('、') || '无'}`)
+      lines.push(`红方秘卷：${redScrolls.map((id) => resourceNameOf('SECRET_SCROLL', id)).join('、') || '无'}`)
+    }
+    if (blueSummons.length || redSummons.length) {
+      lines.push(`蓝方通灵：${blueSummons.map((id, i) => `${i + 1}. ${resourceNameOf('SUMMON', id)}`).join('　') || '无'}`)
+      lines.push(`红方通灵：${redSummons.map((id, i) => `${i + 1}. ${resourceNameOf('SUMMON', id)}`).join('　') || '无'}`)
+    }
     if (game.winner) lines.push(`胜者：${SIDE_TEXT[game.winner]}`)
     lines.push('')
   }

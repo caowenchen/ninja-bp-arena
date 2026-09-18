@@ -1,4 +1,4 @@
-import type { BPActionType, BPSequenceStep, BattleRule, Side } from './types.ts'
+import type { BPActionType, BPSequenceStep, BattleRule, DraftResourceType, ResourceDraftRule, Side } from './types.ts'
 
 /**
  * 规则引擎：负责 BP 序列的展开与校验。
@@ -9,20 +9,37 @@ import type { BPActionType, BPSequenceStep, BattleRule, Side } from './types.ts'
 export interface ExpandedAction {
   side: Side
   action: BPActionType
+  resourceType: DraftResourceType
   /** 属于第几个序列步骤 */
   stepIndex: number
   /** 该步骤内的第几个（0 起） */
   indexInStep: number
 }
 
-export function expandSequence(steps: BPSequenceStep[]): ExpandedAction[] {
+export function expandSequence(steps: BPSequenceStep[], resourceType: DraftResourceType = 'NINJA', stepOffset = 0): ExpandedAction[] {
   const out: ExpandedAction[] = []
   steps.forEach((step, stepIndex) => {
     for (let i = 0; i < step.count; i += 1) {
-      out.push({ side: step.side, action: step.action, stepIndex, indexInStep: i })
+      out.push({ side: step.side, action: step.action, resourceType, stepIndex: stepIndex + stepOffset, indexInStep: i })
     }
   })
   return out
+}
+
+/** 将 v0.4 BattleRule 投影成 v0.5 通用规则，确保 Ninja-only 行为字节级兼容。 */
+export function getResourceDraftRules(rule: BattleRule): ResourceDraftRule[] {
+  if (Array.isArray(rule.resourceDrafts) && rule.resourceDrafts.length > 0) return rule.resourceDrafts
+  return [{
+    resourceType: 'NINJA',
+    enabled: true,
+    slotsPerSide: rule.picksPerPlayer,
+    sequence: [...rule.banSequence, ...rule.pickSequence],
+    crossGameLock: rule.usedNinjaLocked,
+    uniqueAcrossSides: true,
+    banPersistence: rule.banPersistence,
+    banOnlyFirstGame: rule.banOnlyFirstGame,
+    resetEachGame: true,
+  }]
 }
 
 const SIDE_TEXT: Record<Side, string> = { BLUE: '蓝方', RED: '红方' }
@@ -104,6 +121,40 @@ export function validateBattleRule(rule: BattleRule): string[] {
     const bluePicks = pick.steps.filter((s) => s.side === 'BLUE').reduce((sum, s) => sum + s.count, 0)
     if (totalPicks <= 0) errors.push('pickSequence 至少要有一次选择')
     if (bluePicks * 2 !== totalPicks) errors.push('当前引擎要求双方 Pick 总数相等（双方上场人数一致）')
+  }
+  if (rule.resourceDrafts !== undefined) {
+    if (!Array.isArray(rule.resourceDrafts) || rule.resourceDrafts.length === 0) {
+      errors.push('resourceDrafts 必须是非空数组')
+    } else {
+      const seen = new Set<DraftResourceType>()
+      for (const [index, draft] of rule.resourceDrafts.entries()) {
+        const label = `resourceDrafts[${index}]`
+        if (!['NINJA', 'SECRET_SCROLL', 'SUMMON'].includes(draft.resourceType)) errors.push(`${label}.resourceType 非法`)
+        if (seen.has(draft.resourceType)) errors.push(`${label}.resourceType 重复`)
+        seen.add(draft.resourceType)
+        if (typeof draft.enabled !== 'boolean') errors.push(`${label}.enabled 必须是 boolean`)
+        if (!Number.isInteger(draft.slotsPerSide) || draft.slotsPerSide < 0 || draft.slotsPerSide > 12) {
+          errors.push(`${label}.slotsPerSide 必须是 0~12 的整数`)
+        }
+        if (draft.timerSeconds !== undefined && (!Number.isInteger(draft.timerSeconds) || draft.timerSeconds < 5 || draft.timerSeconds > 600)) {
+          errors.push(`${label}.timerSeconds 必须是 5~600 的整数`)
+        }
+        if (!Array.isArray(draft.sequence)) errors.push(`${label}.sequence 必须是数组`)
+        else {
+          const picks = draft.sequence.filter((step) => step.action === 'PICK')
+          const blue = picks.filter((step) => step.side === 'BLUE').reduce((sum, step) => sum + step.count, 0)
+          const red = picks.filter((step) => step.side === 'RED').reduce((sum, step) => sum + step.count, 0)
+          if (draft.enabled && (blue !== draft.slotsPerSide || red !== draft.slotsPerSide)) {
+            errors.push(`${label}.sequence 的双方 PICK 数必须等于 slotsPerSide`)
+          }
+          for (const [stepIndex, step] of draft.sequence.entries()) {
+            if (!['BLUE', 'RED'].includes(step.side) || !['BAN', 'PICK'].includes(step.action) || !Number.isInteger(step.count) || step.count < 1 || step.count > 12) {
+              errors.push(`${label}.sequence[${stepIndex}] 非法`)
+            }
+          }
+        }
+      }
+    }
   }
   return errors
 }

@@ -1,4 +1,5 @@
 import type { BattleRule } from './types.ts'
+import { getResourceDraftRules } from './ruleEngine.ts'
 
 /**
  * 忍者池容量需求分析（Shared BP Core）。
@@ -23,18 +24,30 @@ import type { BattleRule } from './types.ts'
  *   4 + 6 × 3 = 22。
  */
 export function getMinimumRequiredPoolSize(rule: BattleRule): number {
-  const bansPerGame = rule.banSequence.reduce((sum, s) => sum + s.count, 0)
-  const picksPerGame = rule.pickSequence.reduce((sum, s) => sum + s.count, 0)
+  return getMinimumRequiredResources(rule).ninjas
+}
 
-  let banTotal = bansPerGame
-  if (!rule.banOnlyFirstGame && !rule.banPersistence) {
-    // 每一局都要全新的 Ban 名额（第 1 局之外再补 bestOf-1 局）
-    banTotal += bansPerGame * (rule.bestOf - 1)
+export interface MinimumRequiredResources {
+  ninjas: number
+  secretScrolls: number
+  summons: number
+}
+
+export function getMinimumRequiredResources(rule: BattleRule): MinimumRequiredResources {
+  const result: MinimumRequiredResources = { ninjas: 0, secretScrolls: 0, summons: 0 }
+  for (const draft of getResourceDraftRules(rule)) {
+    if (!draft.enabled) continue
+    const bansPerGame = draft.sequence.filter((step) => step.action === 'BAN').reduce((sum, step) => sum + step.count, 0)
+    const picksPerGame = draft.sequence.filter((step) => step.action === 'PICK').reduce((sum, step) => sum + step.count, 0)
+    const gameCount = draft.resetEachGame ? rule.bestOf : 1
+    const banTotal = draft.banOnlyFirstGame || draft.banPersistence ? bansPerGame : bansPerGame * gameCount
+    const picksTotal = draft.crossGameLock ? picksPerGame * gameCount : picksPerGame
+    const required = banTotal + picksTotal
+    if (draft.resourceType === 'NINJA') result.ninjas = required
+    else if (draft.resourceType === 'SECRET_SCROLL') result.secretScrolls = required
+    else result.summons = required
   }
-
-  const picksTotal = rule.usedNinjaLocked ? picksPerGame * rule.bestOf : picksPerGame
-
-  return banTotal + picksTotal
+  return result
 }
 
 /** 统计忍者池中可用（enabled）且 ID 唯一的忍者数量 */
@@ -45,3 +58,5 @@ export function countEnabledNinjas(pool: { id: string; enabled?: boolean }[]): n
   }
   return ids.size
 }
+
+export const countEnabledResources = countEnabledNinjas

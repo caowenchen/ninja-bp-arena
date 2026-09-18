@@ -41,6 +41,13 @@ function isValidGameState(game: unknown, bestOf: number): boolean {
     const player = game[side]
     if (!isRecord(player)) return false
     if (!isStringArray(player.bans) || !isStringArray(player.picks)) return false
+    if (player.resources !== undefined) {
+      if (!isRecord(player.resources)) return false
+      for (const type of ['SECRET_SCROLL', 'SUMMON']) {
+        const draft = player.resources[type]
+        if (draft !== undefined && (!isRecord(draft) || !isStringArray(draft.bans) || !isStringArray(draft.picks))) return false
+      }
+    }
   }
   return true
 }
@@ -53,6 +60,8 @@ function isValidBPAction(action: unknown): boolean {
   if (!SIDES.includes(action.side as Side)) return false
   if (!ACTIONS.includes(action.action as BPActionType)) return false
   if (!isNonEmptyString(action.ninjaId)) return false
+  if (action.resourceType !== undefined && !['NINJA', 'SECRET_SCROLL', 'SUMMON'].includes(action.resourceType as string)) return false
+  if (action.resourceId !== undefined && !isNonEmptyString(action.resourceId)) return false
   if (typeof action.timestamp !== 'number') return false
   if (!isNonNegativeInt(action.sequenceIndex)) return false
   return true
@@ -108,6 +117,22 @@ function isValidNinjaSnapshot(value: unknown): boolean {
     if (typeof item.quality !== 'string' || !QUALITIES.includes(item.quality)) return false
     if (item.avatar !== undefined && typeof item.avatar !== 'string') return false
     if (item.assetKey !== undefined && typeof item.assetKey !== 'string') return false
+  }
+  return true
+}
+
+function isValidResourceSnapshot(value: unknown): boolean {
+  if (!isRecord(value) || !Array.isArray(value.ninjas) || !Array.isArray(value.secretScrolls) || !Array.isArray(value.summons)) return false
+  if (!isValidNinjaSnapshot(value.ninjas)) return false
+  for (const [key, expected] of [['secretScrolls', 'SECRET_SCROLL'], ['summons', 'SUMMON']] as const) {
+    const items = value[key] as unknown[]
+    for (const item of items) {
+      if (!isRecord(item) || item.resourceType !== expected || !isNonEmptyString(item.id) || !isNonEmptyString(item.name) || typeof item.enabled !== 'boolean') return false
+      if (item.asset !== undefined && typeof item.asset !== 'string') return false
+      if (item.avatar !== undefined && typeof item.avatar !== 'string') return false
+      if (item.assetKey !== undefined && typeof item.assetKey !== 'string') return false
+      if (item.tags !== undefined && !isStringArray(item.tags)) return false
+    }
   }
   return true
 }
@@ -172,6 +197,7 @@ export function validateMatchState(value: unknown): boolean {
   // v0.4 可选数据快照
   if (value.dataPack !== undefined && !isValidPackMetadata(value.dataPack)) return false
   if (value.ninjaSnapshot !== undefined && !isValidNinjaSnapshot(value.ninjaSnapshot)) return false
+  if (value.resourceSnapshot !== undefined && !isValidResourceSnapshot(value.resourceSnapshot)) return false
 
   return true
 }
