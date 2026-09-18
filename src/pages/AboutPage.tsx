@@ -16,15 +16,15 @@ export default function AboutPage() {
 
       <div className="mt-6 space-y-5 text-sm leading-relaxed text-fog-300">
         <p>
-          一款纯前端的《火影忍者手游》武斗赛 Ban/Pick 模拟器：完整 BO3 流程、配置化规则、
-          撤销与复盘、忍者池管理。本地模式数据保存在浏览器（localStorage），完全离线可用；
+          一款支持 Ninja、Secret Scroll 与 Summon 的通用资源 Ban/Pick 模拟器：完整 BO3 流程、配置化规则、
+          撤销与复盘、Battle Data Pack v2。本地模式数据保存在浏览器（localStorage），完全离线可用；
           在线 BP 房间基于 Supabase（Anonymous Auth + 服务端权威状态 + Realtime 同步），
           需要部署方自行配置 Supabase 项目。
         </p>
 
         <p className="rounded border border-gold-accent/30 bg-gold-accent/5 p-3 text-xs text-gold-accent">
           本工具为玩家制作的非官方赛事 BP 辅助工具，与游戏官方无隶属或合作关系。
-          内置忍者与标签均为示例数据，不代表官方名单；项目不附带任何未经授权的官方素材。
+          内置 Ninja、Secret Scroll、Summon 与标签均为 Demo 示例数据，不代表官方完整名单；项目不附带任何未经授权的官方素材。
         </p>
 
         <section>

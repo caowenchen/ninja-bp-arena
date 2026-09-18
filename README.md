@@ -3,7 +3,7 @@
 > Ninja BP Arena —— 玩家制作的非官方赛事 BP 辅助工具。
 > **本工具与游戏官方无隶属或合作关系**；内置忍者数据与规则均为示例，不代表官方名单或官方规则。
 
-一款《火影忍者手游》武斗赛 Ban/Pick 模拟器：本地模式纯前端离线可用，完整支持 BO3 三局两胜、Ban 继承、忍者跨局消耗、可刷新恢复的倒计时、撤销/重做、历史复盘、JSON 导入导出与移动端适配；可选的双人在线 BP 房间基于 Supabase（服务端权威 + Realtime 同步）。
+一款玩家制作的通用资源 Ban/Pick 模拟器：v0.5 可配置 Ninja（忍者）+ Secret Scroll（秘卷）+ Summon（通灵），本地模式纯前端离线可用；在线房间基于 Supabase（服务端权威 + Realtime 同步）。
 
 **在线使用**：https://caowenchen.github.io/ninja-bp-arena/ （GitHub Pages 自动部署）
 
@@ -18,10 +18,11 @@
 - **状态机驱动的 BP 引擎**：当前 Game / 阶段 / 行动方 / 步骤剩余数量全部由引擎推导，支持任意自定义序列
 - **可恢复倒计时**：以「阶段标识 + 截止时间戳」持久化；同一序列步骤共用一份时间；刷新后恢复真实剩余时间，已过期进入超时态（不代选，提供继续选择 / 重新计时）
 - **撤销 / 重做**：基于完整状态快照，可跨过「记录胜负」「进入下一局」回退，撤销后计时器正确对齐新阶段
-- **数据可靠性**：所有 localStorage 读取经过严格运行时校验（schema v3 + 版本迁移），损坏数据自动丢弃回退，绝不白屏
+- **数据可靠性**：所有 localStorage 读取经过严格运行时校验（schema v4 + 版本迁移），损坏数据自动丢弃回退，绝不白屏
 - **历史记录**：按 Game 分组的完整操作流水 + 赛果纯文本复制 + 比赛 JSON 导出
 - **赛事版式 BP 页**：桌面「蓝方阵容 | 中央阶段与忍者池 | 红方阵容」对阵结构，大头像人物卡槽位；手机 375px 单列 + sticky 底栏（含 safe-area）
-- **Ninja Data Pack**：内置 / 远程 / 自定义数据源，更新检查、Diff 预览、checksum、JSON Bundle 与 CSV 导入导出；搜索支持名称、别名、标签、系列和形态
+- **Battle Data Pack v2**：同包管理 Ninja / Secret Scroll / Summon，兼容 v1 Ninja-only Pack；更新检查、分类型 Diff、全内容 checksum 与原子安装
+- **Generic Resource Draft Framework**：资源类型、slot、Pick/Ban 顺序、跨局锁定、跨方唯一性、Ban 继承和逐资源计时均由规则配置
 - **忍者池管理**：增删改查、批量启用/停用/删除、品质/系列/标签筛选、可插拔头像素材与加载失败占位
 - **数据备份**：一键导出全部本地数据（ninja-bp-backup.json），恢复前显示内容摘要
 - **其他**：最近 20 场比赛、键盘快捷键（Ctrl+Z / Ctrl+Y）、错误边界、prefers-reduced-motion 支持
@@ -54,7 +55,7 @@ src/
 ├── data/           # 默认规则模板（忍者数据位于仓库根 data/packs/default）
 ├── types/          # Ninja / BattleRule / MatchState 等类型
 ├── hooks/          # 键盘快捷键
-└── utils/          # storage（schema v3 封装）、clipboard、importExport（导入/备份）、sound
+└── utils/          # storage（schema v4 封装）、clipboard、importExport（导入/备份）、sound
 data/packs/default/ # 内置 Demo Data Pack：manifest / ninjas / CHANGELOG
 docs/DATA_PACK.md   # 数据包制作、版本、远程托管与素材规范
 e2e/                # Playwright E2E（BO3 全流程 / 撤销 / 刷新恢复 / 移动端 / 坏数据）
@@ -92,7 +93,7 @@ npm run dev        # 开发：http://localhost:5173
 直接访问 `/bp`、`/ninjas` 等子路径刷新由 `dist/404.html`（index.html 副本）兜底，
 React Router 以 `/ninja-bp-arena` 为 basename 接管路由，不会 404。
 
-## 数据结构（localStorage，schema v3）
+## 数据结构（localStorage，schema v4）
 
 | Key | 内容 |
 | --- | --- |
@@ -143,19 +144,19 @@ interface BattleRule {
 - Game1 出场的 6 名忍者 Game2 不可用；Game1+Game2 的 12 名 Game3 不可用
 - 以上全部可在「规则设置」中修改（含 Ban/Pick 序列 JSON 编辑器），修改只影响之后新开的比赛
 
-## Ninja Data Pack
+## Battle Data Pack v2
 
-内置数据已从 TypeScript 数组迁移到 `data/packs/default/`。当前仓库提供的是 **28 名 Demo 示例数据**，不是官方名单，也不是当前版本的完整社区名单。
+内置数据位于 `data/packs/default/`：**28 名 Ninja、4 个 Secret Scroll、8 个 Summon，全部是 Demo 示例数据**，不是官方名单，也不是当前版本的完整社区名单。
 
 在「数据包」页面可以：
 
 - 查看当前包的名称、版本、来源、数量与数据健康统计
-- 导入 / 导出 `{ "manifest": {...}, "ninjas": [...] }` JSON Bundle
+- 导入 / 导出 `{ "manifest": {...}, "ninjas": [...], "secretScrolls": [...], "summons": [...] }` JSON Bundle；v1 缺失辅助数组时自动迁移为空数组
 - 导入 / 导出 CSV（`aliases` 与 `tags` 使用 `|` 分隔）
 - 通过 HTTPS `manifest.json` 地址检查远程更新；完整下载、schema 与 checksum 校验、Diff 预览后才会应用
 - 切换已安装包或恢复内置 Demo 包；自动检查默认开启且每天最多一次，永不自动覆盖数据
 
-比赛创建时会固化轻量忍者快照；更新数据包不会改变进行中的比赛，完成后的历史只保留实际参与忍者的回退信息。在线房间使用房主创建时的会话快照，加入者不会因此修改自己的全局本地数据。
+比赛创建时会固化完整 Battle Resource Snapshot；更新数据包不会改变进行中的比赛，完成后的历史只保留实际参与资源的回退信息。在线房间的 BLUE、RED 与 Observer 统一使用房主创建时的权威快照。
 
 完整 Schema、稳定 ID、版本、checksum、远程托管与素材说明见 [`docs/DATA_PACK.md`](docs/DATA_PACK.md)。可复制模板见 `templates/`，最小可导入示例见 `examples/ninja-data-pack.json`。
 
@@ -245,7 +246,7 @@ supabase functions deploy room-command
 
 房间创建时会校验「可用忍者数量」是否足以完成整场比赛（最坏情况）。
 默认武斗赛 BO3 需要 **22** 名可用忍者（4 Ban + 6 Pick × 3 局）。
-不足时返回 `INSUFFICIENT_NINJA_POOL { required, available }`；
+不足时返回 `INSUFFICIENT_RESOURCE_POOL { resourceType, required, available }`；
 本地开赛同样会阻止并提示。容量需求由
 `supabase/functions/_shared/bp-core/poolRequirement.ts` 统一推导。
 
@@ -271,7 +272,7 @@ GitHub Pages 部署：在仓库 Settings → Secrets and variables → Actions �
 
 - 客户端对在线业务表（rooms / room_members / room_commands）**只读**——
   创建房间、加入席位、BP 操作、关闭房间全部通过 Edge Functions（service role）完成
-- 客户端只能发送语义命令（`SELECT_NINJA` / `SET_GAME_WINNER` / `REQUEST_UNDO`…），
+- 客户端只能发送语义命令（`SELECT_RESOURCE`，兼容 `SELECT_NINJA` / `SET_GAME_WINNER` / `REQUEST_UNDO`…），
   Side 一律由服务端按 `room_members` + BP 引擎阶段推导，不信任客户端
 - `rooms.match_state` 客户端不可写（RLS + GRANT 双重约束），唯一写入口是 `room-command`
   （service role，密钥只在 Deno.env）
@@ -290,10 +291,20 @@ GitHub Pages 部署：在仓库 Settings → Secrets and variables → Actions �
 
 ### 6. 已知限制
 
-- 房间固化创建者的轻量忍者快照，双方名称、品质与头像来源一致；旧版房间没有显示快照时回退本机数据
+- 房间固化创建者的轻量 Battle Resource Snapshot，三端名称与素材来源一致；旧版房间安全回退 Ninja pool
 - 在线模式的撤销 = 撤销最后一步 Ban/Pick，且需对方确认（本地模式撤销能力更强）
 - 胜负记录/进入下一局/重置 仅房主可执行（防双提交），后续可加双方确认
 
+
+## v0.5.0 Generic Resource Draft Framework
+
+- Ninja、Secret Scroll、Summon 统一资源模型、Registry、Asset Resolver、阶段引擎和 `SELECT_RESOURCE` 命令
+- 保留 Ninja Only 模式；新增明确标为示例的 `Full Loadout Demo`（每方 3 Ninja / 1 Secret Scroll / 3 Summon）
+- Battle Data Pack v2、v1→v2 migration、分类型 Diff、完整内容 checksum、storage schema v4
+- 本地与在线权威资源快照、历史压缩、辅助资源 Undo/Timer/Result 与 Observer 实时同步
+- 数据库 `0004_auxiliary_resources.sql` 增加 `rooms.resource_snapshot jsonb`
+
+数据状态：Ninja / Secret Scroll / Summon 均为 **Demo 示例数据**，不是官方完整数据。
 
 ## v0.4.0 Data Pack 说明
 
@@ -317,7 +328,7 @@ GitHub Pages 部署：在仓库 Settings → Secrets and variables → Actions �
   （0002 迁移）；同 scope 但 command_type / 规范化 payload 不一致同样判定为复用
 - **忍者池容量合法性**：Shared BP Core 新增 `getMinimumRequiredPoolSize(rule)` 按规则推导完成整场比赛
   所需最少可用忍者（默认武斗赛 BO3 = **22**：4 Ban + 6 Pick × 3 局，USED 跨局锁定）；
-  room-create 不足返回 `INSUFFICIENT_NINJA_POOL { required, available }`，本地开赛同样前置阻止
+  room-create 不足返回 `INSUFFICIENT_RESOURCE_POOL { resourceType, required, available }`，本地开赛同样前置阻止
 - **滥用防护**：room-create 服务端限速（每 auth user 5 次/60s + 20 次/24h，`action_attempts` 通用限速表）；
   单房间观战者上限 50（超出返回 `ROOM_OBSERVER_LIMIT`）
 - **Rejected command 审计并发安全**：重复 rejected commandId 走 upsert（忽略冲突），始终返回稳定业务响应，revision 不变

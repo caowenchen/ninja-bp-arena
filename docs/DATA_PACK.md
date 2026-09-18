@@ -1,96 +1,87 @@
-# Ninja Data Pack
+# Battle Data Pack v2
 
-Ninja Data Pack 是 Ninja BP Arena 的纯数据包格式。它不依赖头像素材即可工作；项目内置包和第三方包都不得声称为官方数据，除非来源确有可验证的官方授权。
-
-当前仓库的 `data/packs/default/` 是 28 名角色的 Demo 示例包，不是当前游戏版本的完整名单。
+Battle Data Pack 是 Ninja BP Arena v0.5 的纯数据包格式，可同时提供 Ninja（忍者）、Secret Scroll（秘卷）与 Summon（通灵）。它不依赖图片素材即可工作。仓库内置资源全部是 Demo 示例，不是官方完整数据库。
 
 ## 目录与 Bundle
-
-仓库包目录：
 
 ```text
 data/packs/<pack-id>/
 ├── manifest.json
 ├── ninjas.json
+├── secret-scrolls.json
+├── summons.json
 └── CHANGELOG.md
 ```
 
-网页导入使用单 JSON Bundle：
+网页导入使用原子 JSON Bundle：
 
 ```json
 {
-  "manifest": { "schemaVersion": 1, "id": "my-pack", "name": "我的数据包", "version": "2026.09.1", "updatedAt": "2026-09-01T00:00:00.000Z", "ninjaCount": 1 },
-  "ninjas": [{ "id": "stable-ninja-001", "name": "示例忍者", "quality": "A", "tags": [], "enabled": true }]
+  "manifest": {
+    "schemaVersion": 2,
+    "id": "my-pack",
+    "name": "My Battle Pack",
+    "version": "2026.09.1",
+    "updatedAt": "2026-09-18T00:00:00.000Z",
+    "ninjaCount": 1,
+    "secretScrollCount": 1,
+    "summonCount": 1
+  },
+  "ninjas": [{ "id": "ninja-stable-001", "name": "示例忍者", "quality": "A", "tags": [], "enabled": true }],
+  "secretScrolls": [{ "id": "scroll-stable-001", "name": "示例秘卷", "tags": [], "enabled": true }],
+  "summons": [{ "id": "summon-stable-001", "name": "示例通灵", "tags": [], "enabled": true }]
 }
 ```
+
+## v1 → v2 migration
+
+v1 Ninja-only Bundle 仍可导入。导入器会把缺失的 `secretScrolls` / `summons` 当作空数组，并在内存中升级 manifest 为 schema v2；原有 Ninja stable ID 保持不变。已安装 v0.4 包、本地设置、历史和进行中比赛由 storage schema v4 兼容读取。损坏内容会被拒绝并回退到内置 Demo 包，不会让页面白屏。
 
 ## Manifest
 
 | 字段 | 必需 | 说明 |
 | --- | --- | --- |
-| `schemaVersion` | 是 | 当前为 `1`，描述 JSON 结构版本 |
-| `id` | 是 | 数据包稳定 ID |
-| `name` | 是 | 显示名称 |
-| `version` | 是 | 内容版本，推荐 `YYYY.MM.N` |
+| `schemaVersion` | 是 | v2 新包写 `2`；导入器兼容 `1` |
+| `id` / `name` / `version` | 是 | 包的稳定 ID、显示名和内容版本 |
 | `updatedAt` | 是 | ISO 时间 |
-| `ninjaCount` | 是 | 必须等于 `ninjas.length` |
-| `gameVersion` | 否 | 对应的游戏版本说明 |
-| `source` / `description` | 否 | 来源与纯文本描述 |
-| `checksum` | 否 | `sha256:<hex>`；存在时导入和远程更新必须匹配 |
-| `assetBaseUrl` | 否 | HTTPS 地址或站点绝对路径，与 `assetKey` 拼接 |
+| `ninjaCount` | 是 | 等于 `ninjas.length` |
+| `secretScrollCount` / `summonCount` | v2 是 | 分别等于对应数组长度 |
+| `checksum` | 否 | 完整有效内容的 `sha256:<hex>` |
+| `assetBaseUrl` | 否 | HTTPS 地址或站点绝对路径 |
 
-`schemaVersion` 与 `version` 不同：前者只在格式变化时升级，后者在内容变化时升级。版本比较按数字分段进行，无法解析时回退到 `updatedAt`。
+checksum 覆盖规范化后的 `{ ninjas, secretScrolls, summons }`，不是只覆盖 Ninja。远程更新按“下载 → schema/数量/ID 校验 → checksum → 分类型 Diff 预览 → 用户确认 → 原子安装”执行。
 
-## Ninja Schema v2
+## Resource schema 与 stable ID
 
-必需字段：`id`、`name`、`quality`、`tags`、`enabled`。
+三类资源共有：`id`、`name`、`aliases?`、`asset?` / `avatar?`、`assetKey?`、`tags`、`enabled`、`deprecated?`、`dataVersion?`。Ninja 额外要求 `quality`（S/A/B/C），并继续兼容 v0.4 字段。
 
-可选字段：`aliases`、`avatar`、`sortOrder`、`version`、`releaseDate`、`remark`、`slug`、`series`、`forms`、`roles`、`rarityLabel`、`dataVersion`、`assetKey`、`deprecated`。
+- ID 是永久引用；改名、翻译或素材变化不能改 ID。
+- 同一包内三类资源的 ID 必须全局唯一。
+- 下架内容优先使用 `deprecated: true` 或 `enabled: false`。
+- 不得把 Base64 / `data:` 图片写入在线快照。
+- 缺图时 UI 使用按资源类别区分的原创文字占位。
 
-- `id` 是永久引用。一旦发布，不得因改名、翻译或格式变化而修改。
-- `quality` 只能是 `S`、`A`、`B`、`C`。
-- 下架角色优先设置 `deprecated: true` 或 `enabled: false`，不要直接删除，否则旧历史可能失去引用。
-- 不要把 Base64 图片写入数据包或在线房间快照。
+## 远程托管
 
-## Checksum
+v2 远程目录把 `manifest.json`、`ninjas.json`、`secret-scrolls.json` 与 `summons.json` 放在同一 HTTPS 目录。v1 远程包只需要前两个文件。请求有超时和大小限制；校验失败时旧包保持不变。
 
-checksum 针对 `ninjas.json` 解析后重新 `JSON.stringify` 的 UTF-8 内容计算 SHA-256。仓库内置包运行：
+## 在线与历史
+
+本地比赛在创建时固化完整 Battle Resource Snapshot。在线房间把相同快照写入 `rooms.resource_snapshot`，BLUE、RED 与 Observer 都只使用房间权威快照。旧房间仍从 `rooms.pool` 安全回退。
+
+比赛结束后历史只保留实际 Ban/Pick 过的资源 fallback metadata，不复制整个数据包。即使资源以后被删除，旧赛果仍可显示。
+
+## Demo 数据状态
+
+- Ninja：Demo
+- Secret Scroll：Demo
+- Summon：Demo
+
+这些数据只用于功能演示与测试，不代表当前游戏版本、官方规则或官方完整名单。项目不会爬取腾讯网站、逆向 APK、解包游戏资源或自动抓取官方美术素材。
+
+## 校验
 
 ```bash
 npm run data:validate
 node scripts/data-validate.mjs --fix-checksum
 ```
-
-第二条命令会修改 manifest，只应在确认数据变更后使用。
-
-## 远程托管与更新
-
-将 `manifest.json` 与 `ninjas.json` 放在同一 HTTPS 目录。应用先下载并校验 manifest，再下载 ninjas；manifest 最大 100KB，忍者 JSON 最大 5MB，请求 12 秒超时。所有内容通过 schema、数量、稳定 ID 与 checksum 校验后才会进入预览，用户确认前不会覆盖本地数据。
-
-自动检查默认每天最多一次，只检查不自动应用。远程包应使用静态 JSON，不得包含脚本、HTML、动态模块或需要执行的代码。
-
-## 素材
-
-素材优先级为：条目 `avatar` → `assetBaseUrl + assetKey` → 原创文字占位图。图片失败后同一会话不再重复请求，列表图片使用懒加载。
-
-数据包和素材包应分离。请只使用你有权使用的图片；仓库不会抓取、解包或自动提交游戏官方美术资源。
-
-## CSV 维护
-
-可选维护流程：
-
-```text
-Excel / data/source/ninjas.csv
-→ npm run data:build
-→ npm run data:validate
-→ 更新 CHANGELOG.md
-→ commit
-```
-
-CSV 表头见 `templates/ninja-data-pack.example.csv`。`aliases` 与 `tags` 使用 `|` 分隔，不支持跨行单元格。
-
-## 在线与历史兼容
-
-本地比赛创建时保存完整轻量快照；比赛完成后只保留 Ban/Pick 实际引用的角色。在线房间保存房主的轻量快照与数据包元信息，所有成员在该房间内统一显示这份数据，退出房间后仍使用各自的本地数据包。
-
-房间快照和历史回退数据不会覆盖用户的全局忍者池。
