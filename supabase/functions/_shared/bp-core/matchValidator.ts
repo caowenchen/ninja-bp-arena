@@ -87,6 +87,31 @@ export function validateStoredRule(value: unknown): boolean {
   return validateBattleRule(value as unknown as BattleRule).length === 0
 }
 
+/** 校验比赛的数据包元信息（v0.4 可选字段） */
+function isValidPackMetadata(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  if (!isNonEmptyString(value.packId)) return false
+  if (value.schemaVersion !== undefined && !isNonNegativeInt(value.schemaVersion)) return false
+  if (value.packVersion !== undefined && (typeof value.packVersion !== 'string' || (value.packVersion as string).length > 40)) return false
+  if (value.checksum !== undefined && (typeof value.checksum !== 'string' || !/^sha256:[0-9a-f]{64}$/i.test(value.checksum as string))) return false
+  return true
+}
+
+/** 校验比赛的忍者池轻量快照（v0.4 可选字段） */
+function isValidNinjaSnapshot(value: unknown): boolean {
+  if (!Array.isArray(value)) return false
+  for (const item of value) {
+    if (!isRecord(item)) return false
+    if (!isNonEmptyString(item.id)) return false
+    if (typeof item.name !== 'string' || (item.name as string).trim() === '') return false
+    if (typeof item.enabled !== 'boolean') return false
+    if (typeof item.quality !== 'string' || !QUALITIES.includes(item.quality)) return false
+    if (item.avatar !== undefined && typeof item.avatar !== 'string') return false
+    if (item.assetKey !== undefined && typeof item.assetKey !== 'string') return false
+  }
+  return true
+}
+
 /**
  * 严格校验一场比赛的持久化数据。
  * 任何一层不合法都返回 false，由加载层整体丢弃。
@@ -144,10 +169,14 @@ export function validateMatchState(value: unknown): boolean {
   // 在线模式的可选服务端计时器
   if (!isValidTimer(value.timer)) return false
 
+  // v0.4 可选数据快照
+  if (value.dataPack !== undefined && !isValidPackMetadata(value.dataPack)) return false
+  if (value.ninjaSnapshot !== undefined && !isValidNinjaSnapshot(value.ninjaSnapshot)) return false
+
   return true
 }
 
-/** 校验单条忍者数据 */
+/** 校验单个 Ninja（持久化 / 运行时通用；新字段全部可选） */
 export function validateNinjaRecord(value: unknown): boolean {
   if (!isRecord(value)) return false
   if (!isNonEmptyString(value.id)) return false
@@ -159,6 +188,17 @@ export function validateNinjaRecord(value: unknown): boolean {
   if (value.aliases !== undefined && !isStringArray(value.aliases)) return false
   if (value.sortOrder !== undefined && !isNonNegativeInt(value.sortOrder)) return false
   if (value.remark !== undefined && typeof value.remark !== 'string') return false
+  // v0.4 数据包字段（全部可选，出现时校验类型）
+  if (value.slug !== undefined && typeof value.slug !== 'string') return false
+  if (value.series !== undefined && !isStringArray(value.series)) return false
+  if (value.forms !== undefined && !isStringArray(value.forms)) return false
+  if (value.roles !== undefined && !isStringArray(value.roles)) return false
+  if (value.rarityLabel !== undefined && typeof value.rarityLabel !== 'string') return false
+  if (value.dataVersion !== undefined && typeof value.dataVersion !== 'string') return false
+  if (value.assetKey !== undefined && typeof value.assetKey !== 'string') return false
+  if (value.deprecated !== undefined && typeof value.deprecated !== 'boolean') return false
+  if (value.version !== undefined && typeof value.version !== 'string') return false
+  if (value.releaseDate !== undefined && typeof value.releaseDate !== 'string') return false
   return true
 }
 

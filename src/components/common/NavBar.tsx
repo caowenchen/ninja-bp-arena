@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { Menu, Play, ScrollText, Settings, X } from 'lucide-react'
+import { Database, Menu, Play, ScrollText, Settings, X } from 'lucide-react'
 import { MatchSetupDialog } from '@/components/match/MatchSetupDialog'
 import { useBPStore } from '@/store/bpStore'
 
@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { to: '/', label: '首页' },
   { to: '/online', label: '在线 BP' },
   { to: '/ninjas', label: '忍者池', icon: ScrollText },
+  { to: '/data', label: '数据包', icon: Database },
   { to: '/settings', label: '规则设置', icon: Settings },
   { to: '/about', label: '关于' },
 ] as const

@@ -4,6 +4,7 @@ import type { Ninja } from '@/types/ninja'
 import type { MatchState } from '@/types/match'
 import type { NinjaCardStatus } from '@/engine/bpEngine'
 import { getNinjaCardStatus } from '@/engine/bpEngine'
+import { getNewNinjaIds } from '@/dataPack/store'
 import { NinjaCard } from './NinjaCard'
 
 /** 状态筛选（与搜索/品质叠加） */
@@ -26,6 +27,7 @@ interface NinjaGridProps {
 
 /** 忍者选择网格：状态全部由引擎统一计算 */
 export function NinjaGrid({ ninjas, match, statusFilter = 'ALL', onPick }: NinjaGridProps) {
+  const newIds = useMemo(() => getNewNinjaIds(), [])
   const cards = useMemo(
     () =>
       ninjas
@@ -51,7 +53,7 @@ export function NinjaGrid({ ninjas, match, statusFilter = 'ALL', onPick }: Ninja
   return (
     <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 md:grid-cols-5 2xl:grid-cols-6">
       {cards.map(({ ninja, status }) => (
-        <NinjaCard key={ninja.id} ninja={ninja} status={status} onPick={onPick} />
+        <NinjaCard key={ninja.id} ninja={ninja} status={status} onPick={onPick} isNew={newIds.has(ninja.id)} />
       ))}
     </div>
   )

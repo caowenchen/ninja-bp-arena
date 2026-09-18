@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Side } from '@bp-core'
 import { useBPStore } from '@/store/bpStore'
+import { useNinjaStore } from '@/store/ninjaStore'
 import { useTimerStore } from '@/store/timerStore'
 import { getPhase } from '@bp-core'
 import { MatchSourceProvider, type MatchSource } from './context'
@@ -13,10 +14,17 @@ export function LocalMatchSource({ children }: { children: ReactNode }) {
   const match = useBPStore((s) => s.match)
   const canUndo = useBPStore((s) => s.stacks.past.length > 0)
   const canRedo = useBPStore((s) => s.stacks.future.length > 0)
+  const ninjas = useNinjaStore((s) => s.ninjas)
+
+  // v0.4：比赛创建时固化的池快照是显示权威；旧比赛（无快照）回退本地池
+  const matchNinjas = match?.ninjaSnapshot
+    ? match.ninjaSnapshot.map((n) => ({ ...n, tags: [] }))
+    : ninjas
 
   const source: MatchSource = {
     mode: 'local',
     match,
+    matchNinjas,
     selectNinja: (ninjaId) => useBPStore.getState().selectNinja(ninjaId),
     undo: () => ({ ok: useBPStore.getState().undo() }),
     redo: () => ({ ok: useBPStore.getState().redo() }),

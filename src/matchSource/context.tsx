@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from 'react'
-import type { MatchState, OnlineCommandType, PendingUndo, Side } from '@bp-core'
+import type { MatchState, Ninja, OnlineCommandType, PendingUndo, Side } from '@bp-core'
 import type { ConnectionState, Seat } from '@/online/types'
 
 /**
@@ -48,6 +48,13 @@ export interface MatchSource {
   onlineNinjaIds?: string[] | null
   /** 在线模式：怀疑本地状态滞后时强制重拉权威快照 */
   resync?: () => Promise<void>
+  /**
+   * v0.4：当前比赛的显示用忍者列表（显示权威）。
+   * 本地 = 比赛创建时固化的 ninjaSnapshot（旧比赛回退本地池）；
+   * 在线 = 房间 Ninja Snapshot（服务端校验依据，双方一致）。
+   * 为空表示调用方应回退本地池。
+   */
+  matchNinjas?: Ninja[]
 }
 
 const MatchSourceContext = createContext<MatchSource | null>(null)

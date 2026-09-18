@@ -18,10 +18,11 @@
 - **状态机驱动的 BP 引擎**：当前 Game / 阶段 / 行动方 / 步骤剩余数量全部由引擎推导，支持任意自定义序列
 - **可恢复倒计时**：以「阶段标识 + 截止时间戳」持久化；同一序列步骤共用一份时间；刷新后恢复真实剩余时间，已过期进入超时态（不代选，提供继续选择 / 重新计时）
 - **撤销 / 重做**：基于完整状态快照，可跨过「记录胜负」「进入下一局」回退，撤销后计时器正确对齐新阶段
-- **数据可靠性**：所有 localStorage 读取经过严格运行时校验（schema v2 + 版本迁移），损坏数据自动丢弃回退，绝不白屏
+- **数据可靠性**：所有 localStorage 读取经过严格运行时校验（schema v3 + 版本迁移），损坏数据自动丢弃回退，绝不白屏
 - **历史记录**：按 Game 分组的完整操作流水 + 赛果纯文本复制 + 比赛 JSON 导出
 - **赛事版式 BP 页**：桌面「蓝方阵容 | 中央阶段与忍者池 | 红方阵容」对阵结构，大头像人物卡槽位；手机 375px 单列 + sticky 底栏（含 safe-area）
-- **忍者池管理**：增删改查、批量启用/停用/删除、导入预览（新增/更新/无变化统计 + 合并/替换模式）、搜索支持别名、本地头像资源（public/assets/ninjas/）
+- **Ninja Data Pack**：内置 / 远程 / 自定义数据源，更新检查、Diff 预览、checksum、JSON Bundle 与 CSV 导入导出；搜索支持名称、别名、标签、系列和形态
+- **忍者池管理**：增删改查、批量启用/停用/删除、品质/系列/标签筛选、可插拔头像素材与加载失败占位
 - **数据备份**：一键导出全部本地数据（ninja-bp-backup.json），恢复前显示内容摘要
 - **其他**：最近 20 场比赛、键盘快捷键（Ctrl+Z / Ctrl+Y）、错误边界、prefers-reduced-motion 支持
 
@@ -34,7 +35,7 @@ React 19 · TypeScript · Vite · Tailwind CSS v4 · React Router v7 · Zustand 
 ```
 src/
 ├── app/            # App 外壳与路由（basename 兼容 GitHub Pages 子路径）
-├── pages/          # HomePage / BPPage / NinjaPoolPage / SettingsPage / ResultPage / AboutPage
+├── pages/          # HomePage / BPPage / NinjaPoolPage / DataPackPage / SettingsPage / ResultPage / AboutPage
 ├── components/
 │   ├── bp/         # BPHeader、BPStage、PlayerPanel、MobileTeamBar、Ban/PickSlot、
 │   │               # CountdownTimer（持久化 deadline）、历史抽屉、底栏
@@ -49,10 +50,13 @@ src/
 │   └── validators.ts      # UI 校验门面
 ├── store/          # Zustand：bpStore（比赛+快照栈）、timerStore（计时运行时）、
 │                   # ninjaStore、settingsStore、toastStore
-├── data/           # 内置示例忍者池 + 默认规则模板
+├── dataPack/       # Data Pack 加载、校验、Diff、远程更新、素材解析与状态管理
+├── data/           # 默认规则模板（忍者数据位于仓库根 data/packs/default）
 ├── types/          # Ninja / BattleRule / MatchState 等类型
 ├── hooks/          # 键盘快捷键
-└── utils/          # storage（schema v2 封装）、clipboard、importExport（导入/备份）、sound
+└── utils/          # storage（schema v3 封装）、clipboard、importExport（导入/备份）、sound
+data/packs/default/ # 内置 Demo Data Pack：manifest / ninjas / CHANGELOG
+docs/DATA_PACK.md   # 数据包制作、版本、远程托管与素材规范
 e2e/                # Playwright E2E（BO3 全流程 / 撤销 / 刷新恢复 / 移动端 / 坏数据）
 test/               # 单元测试（engine / importExport / validation）
 scripts/copy-404.mjs # GitHub Pages SPA 404 兜底
@@ -74,6 +78,8 @@ npm run dev        # 开发：http://localhost:5173
 | `npm run check:functions` | Deno 检查 Edge Functions 与 Shared Core（需安装 Deno） |
 | `npm run test:db` | 数据库 RLS 安全测试（需 Local Supabase 运行中） |
 | `npm run test:online` | 在线集成 E2E（完整 BO3 / 权限 / RLS attack；**Supabase 不可用时直接失败**） |
+| `npm run data:validate` | 校验内置 Data Pack 的 schema、ID、数量与 checksum |
+| `npm run data:build` | 可选：从 `data/source/ninjas.csv` 构建内置 Data Pack |
 | `npm run build` | 生产构建（含类型检查） |
 | `npm run build:pages` | GitHub Pages 构建（子路径 base + 404.html 兜底） |
 
@@ -86,7 +92,7 @@ npm run dev        # 开发：http://localhost:5173
 直接访问 `/bp`、`/ninjas` 等子路径刷新由 `dist/404.html`（index.html 副本）兜底，
 React Router 以 `/ninja-bp-arena` 为 basename 接管路由，不会 404。
 
-## 数据结构（localStorage，schema v2）
+## 数据结构（localStorage，schema v3）
 
 | Key | 内容 |
 | --- | --- |
@@ -96,8 +102,12 @@ React Router 以 `/ninja-bp-arena` 为 basename 接管路由，不会 404。
 | `ninja-bp.current_match` | 最近一场比赛完整状态（刷新恢复用） |
 | `ninja-bp.recent_matches` | 最近 20 场比赛记录 |
 | `ninja-bp.bp_timer` | 倒计时运行时（phaseKey + deadlineAt） |
+| `ninja-bp.active_data_pack` | 当前数据源 ID（内置 / 已安装包 / CUSTOM） |
+| `ninja-bp.installed_data_packs` | 已安装的文件或远程 Data Pack |
+| `ninja-bp.data_pack_update_state` | 更新检查时间、待确认版本与 NEW 徽标状态 |
+| `ninja-bp.custom_ninja_pool` | 最近一次用户自定义池，切换数据包后仍可恢复 |
 
-所有值以 `{ __v: 2, data: ... }` 包装存储；旧版（无包装）数据按 v1 自动迁移。
+所有值以 `{ __v: 3, data: ... }` 包装存储；旧版（无包装）数据按 v1 自动迁移。
 所有读取经过 `matchValidator` 严格校验，损坏数据 warn + 回退。
 
 ## 核心类型
@@ -108,6 +118,8 @@ interface Ninja {
   avatar?;                    // https(s) 或 /assets/ninjas/xxx.webp
   quality: 'S'|'A'|'B'|'C'; tags; enabled; sortOrder?
   version?; releaseDate?; remark?
+  slug?; series?; forms?; roles?; rarityLabel?
+  dataVersion?; assetKey?; deprecated?
 }
 
 interface BattleRule {
@@ -130,6 +142,22 @@ interface BattleRule {
 - 第 2 / 3 局不再 Ban，但第 1 局的 4 个 Ban 持续有效
 - Game1 出场的 6 名忍者 Game2 不可用；Game1+Game2 的 12 名 Game3 不可用
 - 以上全部可在「规则设置」中修改（含 Ban/Pick 序列 JSON 编辑器），修改只影响之后新开的比赛
+
+## Ninja Data Pack
+
+内置数据已从 TypeScript 数组迁移到 `data/packs/default/`。当前仓库提供的是 **28 名 Demo 示例数据**，不是官方名单，也不是当前版本的完整社区名单。
+
+在「数据包」页面可以：
+
+- 查看当前包的名称、版本、来源、数量与数据健康统计
+- 导入 / 导出 `{ "manifest": {...}, "ninjas": [...] }` JSON Bundle
+- 导入 / 导出 CSV（`aliases` 与 `tags` 使用 `|` 分隔）
+- 通过 HTTPS `manifest.json` 地址检查远程更新；完整下载、schema 与 checksum 校验、Diff 预览后才会应用
+- 切换已安装包或恢复内置 Demo 包；自动检查默认开启且每天最多一次，永不自动覆盖数据
+
+比赛创建时会固化轻量忍者快照；更新数据包不会改变进行中的比赛，完成后的历史只保留实际参与忍者的回退信息。在线房间使用房主创建时的会话快照，加入者不会因此修改自己的全局本地数据。
+
+完整 Schema、稳定 ID、版本、checksum、远程托管与素材说明见 [`docs/DATA_PACK.md`](docs/DATA_PACK.md)。可复制模板见 `templates/`，最小可导入示例见 `examples/ninja-data-pack.json`。
 
 ## 自定义忍者池
 
@@ -169,7 +197,7 @@ interface BattleRule {
 
 ## 未来计划
 
-1. 真实忍者数据库与素材系统
+1. 维护可验证来源的真实社区数据包与独立素材包
 2. 秘卷 / 通灵 BP
 3. 赛事数据与复盘统计
 
@@ -198,6 +226,7 @@ supabase db push           # 应用 supabase/migrations/ 下的全部迁移
 - `0002_security_hardening.sql`：room_commands 幂等约束收紧为 `UNIQUE(room_id, user_id, command_id)`；
   `join_attempts` 演化为通用限速表 `action_attempts`（含 `action_type`：JOIN_ROOM / CREATE_ROOM）；
   `apply_room_state_cas` 审计更新按幂等范围定位（`create or replace`，权限不变）。
+- `0003_data_pack_metadata.sql`：新增 `rooms.data_pack_metadata`，创建房间时原子写入包 ID、schema、版本与 checksum；房间 `pool` 保存经服务端校验的轻量忍者显示快照。
 
 本地开发可用 `supabase start`（本地栈），不要把生产库用于自动化测试。
 
@@ -261,10 +290,21 @@ GitHub Pages 部署：在仓库 Settings → Secrets and variables → Actions �
 
 ### 6. 已知限制
 
-- 双方需要使用同一份忍者池 JSON（房间固化创建者的池子做服务端校验；名字显示取自各自本地池）
+- 房间固化创建者的轻量忍者快照，双方名称、品质与头像来源一致；旧版房间没有显示快照时回退本机数据
 - 在线模式的撤销 = 撤销最后一步 Ban/Pick，且需对方确认（本地模式撤销能力更强）
 - 胜负记录/进入下一局/重置 仅房主可执行（防双提交），后续可加双方确认
 
+
+## v0.4.0 Data Pack 说明
+
+- Ninja Schema v2、稳定 ID、内置 Demo Pack、Pack Validator / Diff / checksum
+- 文件与远程包导入、更新预览、每天一次自动检查、原子确认应用
+- 统一 Asset Resolver、图片懒加载与失败 URL 会话缓存
+- 本地比赛与在线房间固化显示快照；历史压缩后仍能显示当时角色名
+- localStorage schema v3 迁移保留用户自定义池；损坏的已安装包不会进入运行时
+- 在线房间记录包元信息，客户端数据版本不同也统一使用房主会话快照
+
+数据源状态：仓库内置包是 **Demo 示例数据**，不是官方数据，也不是完整真实名单。
 
 ## v0.3.2 安全加固说明
 

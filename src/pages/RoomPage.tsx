@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Copy, DoorClosed, Save } from 'lucide-react'
 import { useOnlineRoomStore } from '@/online/onlineRoomStore'
@@ -10,6 +10,9 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { toast } from '@/store/toastStore'
 import { copyToClipboard } from '@/utils/clipboard'
 import { useBPStore } from '@/store/bpStore'
+import { useDataPackStore } from '@/dataPack/store'
+import { builtInPack } from '@/dataPack/loader'
+import { BUILT_IN_PACK_ID } from '@/dataPack/types'
 
 /** /room/:code —— 在线房间（加入面板 / 等待室 / BP / 结果 / 观战） */
 export default function RoomPage() {
@@ -201,6 +204,14 @@ function WaitingRoom({ code }: { code: string }) {
   const sendCommand = useOnlineRoomStore((s) => s.sendCommand)
   const match = useOnlineRoomStore((s) => s.match)
   const connection = useOnlineRoomStore((s) => s.connection)
+  const roomPackMetadata = useOnlineRoomStore((s) => s.roomPackMetadata)
+  const activePackId = useDataPackStore((s) => s.activePackId)
+  const installedPacks = useDataPackStore((s) => s.installedPacks)
+  const localPack = useMemo(() => {
+    if (activePackId === 'CUSTOM') return null
+    if (activePackId === BUILT_IN_PACK_ID) return builtInPack()
+    return installedPacks.find((pack) => pack.manifest.id === activePackId) ?? null
+  }, [activePackId, installedPacks])
   const [starting, setStarting] = useState(false)
 
   const blue = members.find((m) => m.seat === 'BLUE')
@@ -209,6 +220,17 @@ function WaitingRoom({ code }: { code: string }) {
   const bothReady = Boolean(blue && red)
   const inviteUrl = `${location.origin}/room/${code}`
   const online = (userId: string) => Boolean(presence[userId])
+
+  // v0.4：房主数据包与本机不同 → 会话级提示（绝不修改本地池）
+  const packMismatch = Boolean(
+    roomPackMetadata && (
+      !localPack ||
+      roomPackMetadata.packId !== localPack.manifest.id ||
+      (roomPackMetadata.schemaVersion !== undefined && roomPackMetadata.schemaVersion !== localPack.manifest.schemaVersion) ||
+      (roomPackMetadata.packVersion !== undefined && roomPackMetadata.packVersion !== localPack.manifest.version) ||
+      (roomPackMetadata.checksum !== undefined && roomPackMetadata.checksum !== localPack.manifest.checksum)
+    ),
+  )
 
   const copy = async (text: string, label: string) => {
     const ok = await copyToClipboard(text)
@@ -282,7 +304,19 @@ function WaitingRoom({ code }: { code: string }) {
           <p>BO{match.rule.bestOf} · 先胜 {match.rule.winsRequired} 局</p>
           <p>Ban：{describeSequence(match.rule.banSequence)}</p>
           <p>Pick：{describeSequence(match.rule.pickSequence)}</p>
+          <p className="mt-1 border-t border-border-muted pt-1">
+            忍者数据：{roomPackMetadata?.packVersion ?? '未标记（旧房间）'}
+            {roomPackMetadata?.packVersion && roomPackMetadata.packVersion !== localPack?.manifest.version && (
+              <span className="ml-1 text-gold-accent">（与本机当前 {localPack?.manifest.version ?? '自定义数据'} 不同）</span>
+            )}
+          </p>
         </div>
+      )}
+
+      {packMismatch && (
+        <p className="mt-3 rounded border border-gold-accent/40 bg-gold-accent/10 p-2.5 text-xs text-gold-accent">
+          房间使用的数据版本与你当前不同。本房间将临时使用房主的忍者数据（仅会话内生效，不会修改你的本地数据包）。
+        </p>
       )}
 
       {isHost ? (

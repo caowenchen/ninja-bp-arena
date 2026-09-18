@@ -4,7 +4,7 @@ import type { MatchState } from '@/types/match'
 import { SIDE_TEXT } from '@/types/bp'
 import { buildShareText, groupHistoryByGame } from '@/engine/historyEngine'
 import { exportMatchResult } from '@/engine/bpEngine'
-import { useNinjaStore } from '@/store/ninjaStore'
+import { useNinjaLookup } from '@/hooks/useNinjaLookup'
 import { copyToClipboard, downloadTextFile } from '@/utils/clipboard'
 import { fileTimestamp, formatTime } from '@/utils/format'
 import { toast } from '@/store/toastStore'
@@ -17,7 +17,7 @@ interface MatchResultProps {
 
 /** 完整赛果展示：BP 页结束态与 /result/:id 页共用 */
 export function MatchResult({ match, extraActions }: MatchResultProps) {
-  const nameOf = useNinjaStore((s) => s.nameOf)
+  const { nameOf } = useNinjaLookup(match)
   const finished = match.status === 'MATCH_FINISHED'
   const winner = match.score.blue >= match.rule.winsRequired ? 'BLUE' : match.score.red >= match.rule.winsRequired ? 'RED' : null
 
@@ -58,6 +58,9 @@ export function MatchResult({ match, extraActions }: MatchResultProps) {
           <p className={`text-lg font-bold ${winner === 'BLUE' ? 'text-side-blue-soft' : 'text-side-red-soft'}`}>
             {SIDE_TEXT[winner]}胜利
           </p>
+        )}
+        {match.dataPack?.packVersion && (
+          <p className="text-[10px] text-fog-600">数据版本：{match.dataPack.packVersion}</p>
         )}
       </div>
 

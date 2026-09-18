@@ -19,6 +19,8 @@ jobs:
       - run: npm ci
       - name: Typecheck（Web + Shared Core）
         run: npm run typecheck
+      - name: Data Pack Validation（内置数据包校验）
+        run: npm run data:validate
       - name: Lint
         run: npm run lint
       - name: Unit tests

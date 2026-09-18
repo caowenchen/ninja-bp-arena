@@ -12,6 +12,10 @@ export interface CreateRoomInput {
   seat: 'BLUE' | 'RED'
   rule: BattleRule
   pool: { id: string; enabled: boolean }[]
+  /** v0.4：房间固化的忍者轻量快照（显示权威）；缺省时服务端用 pool 推导 */
+  ninjas?: { id: string; name: string; enabled: boolean; quality: string; avatar?: string; assetKey?: string }[]
+  /** v0.4：房主数据包元信息 */
+  packMetadata?: { packId: string; schemaVersion?: number; packVersion?: string; checksum?: string }
 }
 
 export interface JoinRoomInput {
@@ -68,7 +72,7 @@ export const roomApi = {
     const client = requireClient()
     const { data: room, error: roomError } = await client
       .from('rooms')
-      .select('id, code, status, match_state, revision, pending_action, expires_at, host_user_id, pool')
+      .select('id, code, status, match_state, revision, pending_action, expires_at, host_user_id, pool, data_pack_metadata')
       .eq('id', roomId)
       .maybeSingle()
     if (roomError) throw Object.assign(new Error(roomError.message), { code: 'DB_ERROR' })

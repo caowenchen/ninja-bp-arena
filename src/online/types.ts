@@ -21,7 +21,10 @@ export interface RoomSnapshot {
     pending_action: PendingUndo | null
     expires_at: string
     host_user_id: string
-    pool: { id: string; enabled: boolean }[]
+    /** v0.3：{id,enabled}[]；v0.4 起为完整轻量 Ninja Snapshot（id/name/enabled/quality/avatar/assetKey） */
+    pool: unknown[]
+    /** v0.4：房主创建时固化的数据包元信息（旧房间可能为 null） */
+    data_pack_metadata?: { packId: string; schemaVersion?: number; packVersion?: string; checksum?: string } | null
   } | null
   members: RoomMember[]
 }

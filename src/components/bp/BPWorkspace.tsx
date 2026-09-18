@@ -37,7 +37,9 @@ const QUALITY_ORDER = { S: 0, A: 1, B: 2, C: 3 } as const
 export function BPWorkspace() {
   const source = useMatchSource()
   const match = source.match
-  const ninjas = useNinjaStore((s) => s.ninjas)
+  const storeNinjas = useNinjaStore((s) => s.ninjas)
+  // v0.4 显示权威：本地 = 比赛快照；在线 = 房间 Ninja Snapshot；都缺失才用本地池
+  const ninjas = source.matchNinjas ?? storeNinjas
   const settings = useSettingsStore((s) => s.settings)
   const isOnline = source.mode === 'online'
 
@@ -62,11 +64,11 @@ export function BPWorkspace() {
     const query = normalizeForSearch(search)
     let list = pool
     if (query) {
-      list = list.filter(
-        (n) =>
-          normalizeForSearch(n.name).includes(query) ||
-          (n.aliases?.some((alias) => normalizeForSearch(alias).includes(query)) ?? false),
-      )
+      // 搜索范围：名称 / 别名 / 标签 / 系列 / 形态
+      list = list.filter((n) => {
+        const haystacks = [n.name, ...(n.aliases ?? []), ...(n.tags ?? []), ...(n.series ?? []), ...(n.forms ?? [])]
+        return haystacks.some((text) => normalizeForSearch(text).includes(query))
+      })
     }
     if (quality !== 'ALL') list = list.filter((n) => n.quality === quality)
     if (settings.ninjaSort === 'name') {

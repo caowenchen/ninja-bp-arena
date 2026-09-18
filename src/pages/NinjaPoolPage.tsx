@@ -4,6 +4,8 @@ import type { Ninja, NinjaQuality } from '@/types/ninja'
 import { useNinjaStore } from '@/store/ninjaStore'
 import { useSettingsStore } from '@/store/settingsStore'
 import { toast } from '@/store/toastStore'
+import { useDataPackStore } from '@/dataPack/store'
+import { BUILT_IN_PACK_ID } from '@/dataPack/types'
 import { NinjaAvatar } from '@/components/ninja/NinjaAvatar'
 import { NinjaSearch } from '@/components/ninja/NinjaSearch'
 import { NinjaFilter, type QualityFilter } from '@/components/ninja/NinjaFilter'
@@ -39,11 +41,12 @@ export default function NinjaPoolPage() {
   const setEnabled = useNinjaStore((s) => s.setEnabled)
   const removeMany = useNinjaStore((s) => s.removeMany)
   const importNinjas = useNinjaStore((s) => s.importNinjas)
-  const resetToDefault = useNinjaStore((s) => s.resetToDefault)
   const ninjaSort = useSettingsStore((s) => s.settings.ninjaSort)
 
   const [search, setSearch] = useState('')
   const [quality, setQuality] = useState<QualityFilter>('ALL')
+  const [seriesFilter, setSeriesFilter] = useState('ALL')
+  const [tagFilter, setTagFilter] = useState('ALL')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [form, setForm] = useState<FormState | null>(null)
   const [formErrors, setFormErrors] = useState<string[]>([])
@@ -53,25 +56,46 @@ export default function NinjaPoolPage() {
   const [importPreview, setImportPreview] = useState<{ report: ReturnType<typeof parseNinjaImport>; preview: { added: number; updated: number; unchanged: number }; mode: 'merge' | 'replace' } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // 系列 / 标签候选（来自当前池的真实值，保持筛选紧凑：仅在有数据时显示）
+  const seriesOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const n of ninjas) for (const s of n.series ?? []) set.add(s)
+    return [...set].sort()
+  }, [ninjas])
+  const tagOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const n of ninjas) for (const t of n.tags ?? []) set.add(t)
+    return [...set].sort()
+  }, [ninjas])
+
   const filtered = useMemo(() => {
     const query = normalizeForSearch(search)
     let list = ninjas
     if (query) {
-      list = list.filter(
-        (n) =>
-          normalizeForSearch(n.name).includes(query) ||
-          (n.aliases?.some((alias) => normalizeForSearch(alias).includes(query)) ?? false),
-      )
+      // 搜索范围：名称 / 别名 / 标签 / 系列 / 形态 / slug
+      list = list.filter((n) => {
+        const haystacks = [n.name, ...(n.aliases ?? []), ...(n.tags ?? []), ...(n.series ?? []), ...(n.forms ?? []), n.slug ?? '']
+        return haystacks.some((text) => normalizeForSearch(text).includes(query))
+      })
     }
     if (quality !== 'ALL') list = list.filter((n) => n.quality === quality)
-    return [...list].sort((a, b) =>
-      ninjaSort === 'name'
-        ? a.name.localeCompare(b.name, 'zh-Hans-CN')
-        : (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
-          QUALITY_ORDER[a.quality] - QUALITY_ORDER[b.quality] ||
-          a.name.localeCompare(b.name, 'zh-Hans-CN'),
-    )
-  }, [ninjas, search, quality, ninjaSort])
+    if (seriesFilter !== 'ALL') list = list.filter((n) => n.series?.includes(seriesFilter))
+    if (tagFilter !== 'ALL') list = list.filter((n) => n.tags?.includes(tagFilter))
+    return [...list].sort((a, b) => {
+      if (ninjaSort === 'name') return a.name.localeCompare(b.name, 'zh-Hans-CN')
+      if (ninjaSort === 'releaseDate') {
+        return (a.releaseDate ?? '9999').localeCompare(b.releaseDate ?? '9999') || a.name.localeCompare(b.name, 'zh-Hans-CN')
+      }
+      if (ninjaSort === 'newest') {
+        return (b.releaseDate ?? '0000').localeCompare(a.releaseDate ?? '0000') || a.name.localeCompare(b.name, 'zh-Hans-CN')
+      }
+      return (
+        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+        QUALITY_ORDER[a.quality] - QUALITY_ORDER[b.quality] ||
+        a.name.localeCompare(b.name, 'zh-Hans-CN')
+      )
+    })
+  }, [ninjas, search, quality, seriesFilter, tagFilter, ninjaSort])
 
   const enabledCount = ninjas.filter((n) => n.enabled).length
   const allVisibleSelected = filtered.length > 0 && filtered.every((n) => selected.has(n.id))
@@ -225,6 +249,44 @@ export default function NinjaPoolPage() {
         </label>
         <NinjaSearch value={search} onChange={setSearch} />
         <NinjaFilter value={quality} onChange={setQuality} />
+        {(seriesOptions.length > 0 || tagOptions.length > 0) && (
+          <details className="relative">
+            <summary className="cursor-pointer list-none rounded border border-border-strong px-2 py-1.5 text-xs text-fog-400 hover:bg-surface-2">
+              筛选
+            </summary>
+            <div className="absolute left-0 z-20 mt-1 w-56 space-y-2 rounded border border-border-strong bg-ink-900 p-2.5 shadow-xl">
+              {seriesOptions.length > 0 && (
+                <label className="flex items-center gap-2 text-xs text-fog-400">
+                  系列
+                  <select value={seriesFilter} onChange={(e) => setSeriesFilter(e.target.value)} className="flex-1 rounded border border-border-strong bg-ink-800 px-1.5 py-1 text-fog-200">
+                    <option value="ALL">全部</option>
+                    {seriesOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </label>
+              )}
+              {tagOptions.length > 0 && (
+                <label className="flex items-center gap-2 text-xs text-fog-400">
+                  标签
+                  <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} className="flex-1 rounded border border-border-strong bg-ink-800 px-1.5 py-1 text-fog-200">
+                    <option value="ALL">全部</option>
+                    {tagOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </label>
+              )}
+            </div>
+          </details>
+        )}
+        <select
+          value={ninjaSort}
+          onChange={(e) => useSettingsStore.getState().update({ ninjaSort: e.target.value as 'quality' | 'name' | 'releaseDate' | 'newest' })}
+          aria-label="排序方式"
+          className="rounded border border-border-strong bg-ink-800 px-2 py-1.5 text-xs text-fog-300 focus:outline-none"
+        >
+          <option value="quality">默认排序</option>
+          <option value="name">名称</option>
+          <option value="releaseDate">发布时间</option>
+          <option value="newest">最近新增</option>
+        </select>
       </div>
       {selected.size > 0 && (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded border border-blue-team/30 bg-blue-team/5 px-3 py-2 text-xs">
@@ -537,8 +599,9 @@ export default function NinjaPoolPage() {
         confirmText="恢复"
         danger
         onConfirm={() => {
-          resetToDefault()
-          toast('已恢复内置示例忍者池', 'success')
+          // v0.4：恢复默认 = 重新激活内置数据包（来源同步标记为 BUILT_IN）
+          useDataPackStore.getState().activatePack(BUILT_IN_PACK_ID)
+          toast('已恢复内置示例数据包', 'success')
         }}
         onClose={() => setResetOpen(false)}
       />

@@ -8,8 +8,8 @@ import { loadJSON, saveJSON, STORAGE_KEYS } from '@/utils/storage'
 export interface AppSettings {
   soundEnabled: boolean
   animationsEnabled: boolean
-  /** 忍者池排序：品质优先 / 名称 */
-  ninjaSort: 'quality' | 'name'
+  /** 忍者池排序：默认顺序（品质优先）/ 名称 / 发布时间 / 最近新增 */
+  ninjaSort: 'quality' | 'name' | 'releaseDate' | 'newest'
   /** 首次使用引导是否已看过 */
   firstUseTipSeen: boolean
 }

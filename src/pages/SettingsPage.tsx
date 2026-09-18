@@ -8,6 +8,8 @@ import { describeSequence, parseSequenceSteps, validateBattleRule } from '@/engi
 import { validateMatchState, validateNinjaRecord, validateStoredRule } from '@/engine/matchValidator'
 import { useSettingsStore, type AppSettings } from '@/store/settingsStore'
 import { useNinjaStore } from '@/store/ninjaStore'
+import { useDataPackStore } from '@/dataPack/store'
+import { BUILT_IN_PACK_ID } from '@/dataPack/types'
 import { useBPStore } from '@/store/bpStore'
 import { toast } from '@/store/toastStore'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
@@ -76,7 +78,6 @@ export default function SettingsPage() {
   const [resetPoolOpen, setResetPoolOpen] = useState(false)
   const [restoreSummary, setRestoreSummary] = useState<RestoreSummary | null>(null)
   const backupInputRef = useRef<HTMLInputElement>(null)
-  const resetNinjaPool = useNinjaStore((s) => s.resetToDefault)
 
   const preview = useMemo(() => {
     const ban = describeSequence(draft.banSequence)
@@ -398,8 +399,9 @@ export default function SettingsPage() {
         confirmText="恢复"
         danger
         onConfirm={() => {
-          resetNinjaPool()
-          toast('已恢复内置示例忍者池', 'success')
+          // v0.4：恢复默认 = 重新激活内置数据包（来源同步标记为 BUILT_IN）
+          useDataPackStore.getState().activatePack(BUILT_IN_PACK_ID)
+          toast('已恢复内置示例数据包', 'success')
         }}
         onClose={() => setResetPoolOpen(false)}
       />

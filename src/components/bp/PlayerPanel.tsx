@@ -3,7 +3,7 @@ import { Radio } from 'lucide-react'
 import type { Side } from '@/types/bp'
 import { useMatchSource } from '@/matchSource/context'
 import { getPhase } from '@/engine/bpEngine'
-import { useNinjaStore } from '@/store/ninjaStore'
+import { useNinjaLookup } from '@/hooks/useNinjaLookup'
 import { BanSlot } from './BanSlot'
 import { PickSlot } from './PickSlot'
 
@@ -21,7 +21,7 @@ interface PlayerPanelProps {
 export function PlayerPanel({ side }: PlayerPanelProps) {
   const source = useMatchSource()
   const match = source.match
-  const ninjaById = useNinjaStore((s) => s.getById)
+  const { getById: ninjaById } = useNinjaLookup(match)
 
   const { bans, picks, hasBanPhase, acting } = useMemo(() => {
     if (!match) return { bans: [] as (string | undefined)[], picks: [] as (string | undefined)[], hasBanPhase: false, acting: false }

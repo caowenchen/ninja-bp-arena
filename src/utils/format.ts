@@ -23,7 +23,10 @@ export function fileTimestamp(ts: number): string {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
 }
 
-/** 搜索用：去掉所有空白并转小写 */
+/** 搜索用：去空白、全角→半角、小写、NFKC 规范化（大小写 / 全半角 / 空格差异不敏感） */
 export function normalizeForSearch(text: string): string {
-  return text.replace(/\s+/g, '').toLowerCase()
+  return text
+    .normalize('NFKC')
+    .replace(/\s+/g, '')
+    .toLowerCase()
 }

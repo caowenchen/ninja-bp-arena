@@ -3,7 +3,7 @@ import type { Side } from '@/types/bp'
 import type { MatchState } from '@/types/match'
 import { useMatchSource } from '@/matchSource/context'
 import { NinjaAvatar } from '@/components/ninja/NinjaAvatar'
-import { useNinjaStore } from '@/store/ninjaStore'
+import { useNinjaLookup } from '@/hooks/useNinjaLookup'
 
 interface ReadyStageProps {
   match: MatchState
@@ -13,7 +13,7 @@ interface ReadyStageProps {
 export function ReadyStage({ match }: ReadyStageProps) {
   const source = useMatchSource()
   const game = match.games[match.games.length - 1]
-  const ninjaById = useNinjaStore((s) => s.getById)
+  const { getById: ninjaById } = useNinjaLookup(match)
 
   const renderSide = (side: Side) => {
     const player = side === 'BLUE' ? game.blue : game.red

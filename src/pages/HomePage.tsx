@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronRight, Play, Trash2 } from 'lucide-react'
+import { ChevronRight, Play, RefreshCw, Trash2 } from 'lucide-react'
 import { useBPStore } from '@/store/bpStore'
 import { useSettingsStore } from '@/store/settingsStore'
 import { MatchSetupDialog } from '@/components/match/MatchSetupDialog'
@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { formatDateTime } from '@/utils/format'
 import { SIDE_TEXT } from '@/types/bp'
 import type { MatchState } from '@/types/match'
+import { getBuiltinUpdateNotice, useDataPackStore } from '@/dataPack/store'
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -20,6 +21,13 @@ export default function HomePage() {
 
   const [setupOpen, setSetupOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<MatchState | null>(null)
+
+  // v0.4 低干扰更新提示：内置包随应用更新 / 远程包发现新版本（不弹 Modal）
+  const builtinNotice = getBuiltinUpdateNotice()
+  const remotePending = useDataPackStore((s) =>
+    Object.values(s.updateState.remotes).find((r) => r.pending)?.pending?.manifest ?? null,
+  )
+  const dataNotice = builtinNotice ?? (remotePending ? { version: remotePending.version } : null)
 
   const unfinishedCurrent = useMemo(
     () => (currentMatch && currentMatch.status !== 'MATCH_FINISHED' ? currentMatch : null),
@@ -94,6 +102,17 @@ export default function HomePage() {
             </span>
             <ChevronRight size={15} className="text-fog-600" />
           </button>
+        )}
+
+        {/* 数据包更新提示：低干扰一行（比赛进行中不显示） */}
+        {dataNotice && !unfinishedCurrent && (
+          <Link
+            to="/data"
+            className="mx-auto mt-4 flex items-center gap-2 rounded border border-border-muted bg-surface-1/60 px-4 py-1.5 text-xs text-fog-400 transition-colors hover:border-gold-accent/40 hover:text-gold-accent"
+          >
+            <RefreshCw size={12} />
+            忍者数据有更新（v{dataNotice.version}），点击查看变化
+          </Link>
         )}
 
         {/* 首次使用引导（轻量一行） */}

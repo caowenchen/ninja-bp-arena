@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "ninja-bp-default",
+  "name": "忍界 BP 示例数据（Demo）",
+  "version": "2026.08.1",
+  "gameVersion": "demo",
+  "updatedAt": "2026-08-30T00:00:00.000Z",
+  "source": "ninja-bp-arena 仓库内置",
+  "description": "用于演示与联调的示例忍者数据，不是《火影忍者手游》当前版本的完整名单；品质与标签仅为示例。请勿当作官方数据使用。",
+  "ninjaCount": 28,
+  "checksum": "sha256:1e57a302b077d8060d70ceaa98c1a402da0dde229159cc23a68132b0603f6655",
+  "assetBaseUrl": "/assets/ninjas/"
+}

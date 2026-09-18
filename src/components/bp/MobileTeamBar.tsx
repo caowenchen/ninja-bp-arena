@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { MatchState } from '@/types/match'
 import type { Side } from '@/types/bp'
-import { useNinjaStore } from '@/store/ninjaStore'
+import { useNinjaLookup } from '@/hooks/useNinjaLookup'
 import { NinjaAvatar } from '@/components/ninja/NinjaAvatar'
 import { PlayerPanel } from './PlayerPanel'
 
@@ -16,7 +16,7 @@ interface MobileTeamBarProps {
  */
 export function MobileTeamBar({ match }: MobileTeamBarProps) {
   const [expanded, setExpanded] = useState(false)
-  const ninjaById = useNinjaStore((s) => s.getById)
+  const { getById: ninjaById } = useNinjaLookup(match)
   const game = match.games[match.games.length - 1]
 
   const miniSide = (side: Side) => {

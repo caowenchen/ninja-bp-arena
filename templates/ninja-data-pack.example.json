@@ -1,0 +1,31 @@
+{
+  "manifest": {
+    "schemaVersion": 1,
+    "id": "replace-with-stable-pack-id",
+    "name": "示例社区数据包",
+    "version": "2026.09.1",
+    "gameVersion": "2026-09",
+    "updatedAt": "2026-09-01T00:00:00.000Z",
+    "source": "请填写可验证的数据来源",
+    "description": "玩家维护的非官方数据包",
+    "ninjaCount": 1,
+    "assetBaseUrl": "https://example.com/ninja-assets/v1/"
+  },
+  "ninjas": [
+    {
+      "id": "stable-ninja-001",
+      "name": "示例忍者",
+      "aliases": ["示例别名"],
+      "slug": "example-ninja",
+      "quality": "A",
+      "tags": ["近战"],
+      "series": ["示例系列"],
+      "forms": ["示例形态"],
+      "roles": ["突进"],
+      "enabled": true,
+      "releaseDate": "2026-09-01",
+      "dataVersion": "2026.09.1",
+      "assetKey": "stable-ninja-001.webp"
+    }
+  ]
+}

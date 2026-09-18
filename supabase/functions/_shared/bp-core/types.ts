@@ -28,6 +28,24 @@ export interface Ninja {
   version?: string
   releaseDate?: string
   remark?: string
+
+  // ---- v0.4 数据包字段（全部可选，向后兼容）----
+  /** 稳定短标识：搜索 / URL / 展示用；id 才是永久引用，改名时保持 id 不变 */
+  slug?: string
+  /** 所属系列（如「疾风传」），用于筛选与搜索 */
+  series?: string[]
+  /** 形态（如「九喇嘛模式」），用于筛选与搜索 */
+  forms?: string[]
+  /** 定位（如「突进」「消耗」之外的体系定位），用于筛选 */
+  roles?: string[]
+  /** 品质显示名（数据源原始叫法），仅展示 */
+  rarityLabel?: string
+  /** 该条数据最后所在的包内容版本（如 2026.08.1） */
+  dataVersion?: string
+  /** 素材键：配合 manifest.assetBaseUrl 拼出头像 URL，数据 JSON 不写长 URL */
+  assetKey?: string
+  /** 已下架 / 不再可用：保留记录（历史引用），不出现在可选池 */
+  deprecated?: boolean
 }
 
 export const NINJA_QUALITIES: NinjaQuality[] = ['S', 'A', 'B', 'C']
@@ -152,6 +170,34 @@ export interface MatchState {
   updatedAt: number
   /** 仅在线模式由服务端维护 */
   timer?: MatchTimerState
+
+  // ---- v0.4 比赛数据快照（可选；创建比赛时固化，之后数据包更新不影响进行中/历史比赛）----
+  /** 比赛创建时使用的数据包元信息（自定义池无包时可省略） */
+  dataPack?: MatchPackMetadata
+  /** 比赛创建时的忍者池轻量快照：名称 / 品质 / 头像的显示权威来源 */
+  ninjaSnapshot?: OnlineNinjaSnapshot[]
+}
+
+/** 比赛记录的数据包元信息（历史比赛据它知道当时用的是哪个数据版本） */
+export interface MatchPackMetadata {
+  packId: string
+  schemaVersion?: number
+  packVersion?: string
+  checksum?: string
+}
+
+/**
+ * 在线房间 / 比赛快照使用的忍者轻量对象：
+ * 服务端 BP 只需要 id + enabled；UI 显示需要 name / quality / 头像。
+ * 绝不允许把 Base64 图片放进该对象（JSONB 体积保护）。
+ */
+export interface OnlineNinjaSnapshot {
+  id: string
+  name: string
+  enabled: boolean
+  quality: NinjaQuality
+  avatar?: string
+  assetKey?: string
 }
 
 /** 引擎操作的统一返回，UI 据此决定 Toast 提示 */

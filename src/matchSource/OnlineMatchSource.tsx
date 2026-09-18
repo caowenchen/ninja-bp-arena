@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import { computeTimerPhaseKey, getPhase } from '@bp-core'
+import { useMemo, type ReactNode } from 'react'
+import { computeTimerPhaseKey, getPhase, toOnlineNinjaSnapshots } from '@bp-core'
 import { useOnlineRoomStore } from '@/online/onlineRoomStore'
 import { MatchSourceProvider, type MatchSource } from './context'
 
@@ -8,7 +8,7 @@ import { MatchSourceProvider, type MatchSource } from './context'
  * 验证并应用；本组件不产生任何本地状态修改。操作为异步（等待服务端确认）。
  */
 export function OnlineMatchSource({ children }: { children: ReactNode }) {
-  const match = useOnlineRoomStore((s) => s.match)
+  const authoritativeMatch = useOnlineRoomStore((s) => s.match)
   const mySeat = useOnlineRoomStore((s) => s.mySeat)
   const isHost = useOnlineRoomStore((s) => s.isHost)
   const userId = useOnlineRoomStore((s) => s.userId)
@@ -17,6 +17,22 @@ export function OnlineMatchSource({ children }: { children: ReactNode }) {
   const pendingUndo = useOnlineRoomStore((s) => s.pendingUndo)
   const roomStatus = useOnlineRoomStore((s) => s.roomStatus)
   const onlineNinjaIds = useOnlineRoomStore((s) => s.onlineNinjaIds)
+  const roomNinjas = useOnlineRoomStore((s) => s.roomNinjas)
+  const roomPackMetadata = useOnlineRoomStore((s) => s.roomPackMetadata)
+
+  // v0.4：房间 Ninja Snapshot 是显示权威（服务端按它校验，双方必然一致）；
+  // 旧房间（只有 {id,enabled}）回退本地池按 id 过滤
+  const matchNinjas = roomNinjas ?? undefined
+  // 把会话级房间快照挂到展示用 MatchState。服务端权威 match_state 不需要
+  // 重复存这份数据，但卡槽、历史与结果组件都能统一走 useNinjaLookup。
+  const match = useMemo(() => {
+    if (!authoritativeMatch) return null
+    return {
+      ...authoritativeMatch,
+      ...(roomPackMetadata ? { dataPack: roomPackMetadata } : {}),
+      ...(roomNinjas ? { ninjaSnapshot: toOnlineNinjaSnapshots(roomNinjas) } : {}),
+    }
+  }, [authoritativeMatch, roomNinjas, roomPackMetadata])
 
   const phase = match ? getPhase(match) : null
   const isMyTurn = Boolean(
@@ -54,6 +70,7 @@ export function OnlineMatchSource({ children }: { children: ReactNode }) {
     pendingUndo,
     myUserId: userId,
     onlineNinjaIds,
+    matchNinjas,
     resync: () => useOnlineRoomStore.getState().refreshSnapshot(),
   }
 

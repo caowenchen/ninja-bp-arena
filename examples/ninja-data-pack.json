@@ -1,0 +1,28 @@
+{
+  "manifest": {
+    "schemaVersion": 1,
+    "id": "ninja-bp-minimal-example",
+    "name": "最小可导入示例包",
+    "version": "1.0.0",
+    "updatedAt": "2026-09-01T00:00:00.000Z",
+    "source": "Ninja BP Arena 示例",
+    "description": "仅用于演示 Data Pack 格式，不代表官方或完整角色名单。",
+    "ninjaCount": 2
+  },
+  "ninjas": [
+    {
+      "id": "example-blue-001",
+      "name": "蓝方示例忍者",
+      "quality": "A",
+      "tags": ["近战"],
+      "enabled": true
+    },
+    {
+      "id": "example-red-002",
+      "name": "红方示例忍者",
+      "quality": "B",
+      "tags": ["远程"],
+      "enabled": true
+    }
+  ]
+}

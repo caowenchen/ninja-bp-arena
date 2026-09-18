@@ -14,6 +14,8 @@ import { emptyStacks, recordSnapshot, redo, undo, type UndoStacks } from '@/engi
 import { validateMatchState } from '@/engine/matchValidator'
 import { useNinjaStore } from './ninjaStore'
 import { useSettingsStore } from './settingsStore'
+import { buildMatchPackSnapshot } from '@/dataPack/store'
+import { compactMatchForHistory } from '@/dataPack/matchSnapshot'
 import { playSound } from '@/utils/sound'
 import { loadJSON, removeKey, saveJSON, STORAGE_KEYS } from '@/utils/storage'
 import { toast } from './toastStore'
@@ -86,10 +88,16 @@ function commit(next: MatchState) {
 }
 
 function persistMatch(match: MatchState) {
-  saveJSON(STORAGE_KEYS.currentMatch, match)
-  const recent = [match, ...useBPStore.getState().recentMatches.filter((m) => m.id !== match.id)].slice(0, MAX_RECENT)
+  const currentSaved = saveJSON(STORAGE_KEYS.currentMatch, match)
+  // 历史条目：进行中的比赛保留完整池快照（可继续）；已结束的比赛压缩
+  // （只保留参与忍者的显示数据），避免「20 场 × 全量快照」撑爆存储
+  const forHistory = match.status === 'MATCH_FINISHED' ? compactMatchForHistory(match) : match
+  const recent = [forHistory, ...useBPStore.getState().recentMatches.filter((m) => m.id !== match.id)].slice(0, MAX_RECENT)
   useBPStore.setState({ recentMatches: recent })
-  saveJSON(STORAGE_KEYS.recentMatches, recent)
+  const saved = saveJSON(STORAGE_KEYS.recentMatches, recent)
+  if (currentSaved === 'quota' || saved === 'quota') {
+    toast('本地存储空间不足，比赛或历史记录可能未保存', 'error')
+  }
 }
 
 export const useBPStore = create<BPStore>()((set, get) => ({
@@ -100,7 +108,14 @@ export const useBPStore = create<BPStore>()((set, get) => ({
 
   startNewMatch: (bluePlayerName, redPlayerName) => {
     const rule = useSettingsStore.getState().activeRule()
-    const match = startMatch(createMatch(rule, bluePlayerName, redPlayerName))
+    // v0.4：创建比赛时固化忍者池快照与数据包元信息；
+    // 之后数据包更新 / 忍者删除不影响进行中的比赛与历史显示
+    const packSnapshot = buildMatchPackSnapshot()
+    const match: MatchState = {
+      ...startMatch(createMatch(rule, bluePlayerName, redPlayerName)),
+      ...(packSnapshot.dataPack ? { dataPack: packSnapshot.dataPack } : {}),
+      ninjaSnapshot: packSnapshot.ninjaSnapshot,
+    }
     set({ match, stacks: emptyStacks() })
     persistMatch(match)
     return match
@@ -226,7 +241,8 @@ export const useBPStore = create<BPStore>()((set, get) => ({
       toast('该比赛数据未通过校验，无法保存', 'error')
       return
     }
-    const recent = [match, ...get().recentMatches.filter((m) => m.id !== match.id)].slice(0, MAX_RECENT)
+    const forHistory = match.status === 'MATCH_FINISHED' ? compactMatchForHistory(match) : match
+    const recent = [forHistory, ...get().recentMatches.filter((m) => m.id !== match.id)].slice(0, MAX_RECENT)
     set({ recentMatches: recent })
     saveJSON(STORAGE_KEYS.recentMatches, recent)
   },

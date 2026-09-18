@@ -23,6 +23,8 @@ interface NinjaCardProps {
   ninja: Ninja
   status: NinjaCardStatus
   onPick: (ninja: Ninja) => void
+  /** 数据包更新后 7 天内的新忍者 NEW 徽标 */
+  isNew?: boolean
 }
 
 /**
@@ -30,10 +32,10 @@ interface NinjaCardProps {
  * 状态只靠 遮罩 / 描边 / 标签 / 透明度 表达，不做花哨背景。
  * React.memo + 引擎统一计算状态，倒计时变化不会引发卡片重渲染。
  */
-export const NinjaCard = memo(function NinjaCard({ ninja, status, onPick }: NinjaCardProps) {
+export const NinjaCard = memo(function NinjaCard({ ninja, status, onPick, isNew }: NinjaCardProps) {
   const available = status === 'AVAILABLE'
   const dimmed = status === 'BANNED' || status === 'USED'
-  const tooltip = `${ninja.name} · ${ninja.quality}${ninja.tags.length ? ` · ${ninja.tags.join(' / ')}` : ''} · ${STATUS_LABEL[status]}`
+  const tooltip = `${ninja.name} · ${ninja.quality}${ninja.tags.length ? ` · ${ninja.tags.join(' / ')}` : ''} · ${STATUS_LABEL[status]}${ninja.dataVersion ? ` · 数据 ${ninja.dataVersion}` : ''}`
 
   return (
     <button
@@ -51,6 +53,7 @@ export const NinjaCard = memo(function NinjaCard({ ninja, status, onPick }: Ninj
         <NinjaAvatar
           name={ninja.name}
           avatar={ninja.avatar}
+          assetKey={ninja.assetKey}
           className={`h-full w-full ${dimmed ? 'opacity-50 saturate-0' : ''}`}
           textClassName="text-2xl"
         />
@@ -62,6 +65,13 @@ export const NinjaCard = memo(function NinjaCard({ ninja, status, onPick }: Ninj
         >
           {ninja.quality}
         </span>
+
+        {/* NEW 徽标：数据包更新带来的新忍者 */}
+        {isNew && (
+          <span className="absolute right-1 top-1 rounded-sm bg-emerald-500/90 px-1 text-[9px] font-bold leading-4 text-white">
+            NEW
+          </span>
+        )}
 
         {/* 状态标签：统一的底部窄条 */}
         {status === 'BANNED' && (

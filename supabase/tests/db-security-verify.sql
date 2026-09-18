@@ -190,19 +190,19 @@ begin
   raise notice 'CHECK-PASS: CAS RPC 仅 service_role 可执行';
 end $t9$;
 
--- 10 create_room_transaction RPC：仅 service_role
+-- 10 create_room_transaction RPC：仅 service_role（0003 起为 6 参，第 6 参默认 null）
 do $t10$
 begin
   if has_function_privilege(
        'authenticated',
-       'public.create_room_transaction(uuid,text,text,jsonb,jsonb)',
+       'public.create_room_transaction(uuid,text,text,jsonb,jsonb,jsonb)',
        'EXECUTE'
      ) then
     raise exception 'authenticated 仍可执行创建房间 RPC';
   end if;
   if not has_function_privilege(
        'service_role',
-       'public.create_room_transaction(uuid,text,text,jsonb,jsonb)',
+       'public.create_room_transaction(uuid,text,text,jsonb,jsonb,jsonb)',
        'EXECUTE'
      ) then
     raise exception 'service_role 不能执行创建房间 RPC';
@@ -264,6 +264,36 @@ begin
   end if;
   raise notice 'CHECK-PASS: action_attempts 限速表（含 action_type）已就绪';
 end $t12$;
+
+-- 13 v0.4.0 数据包元数据：rooms.data_pack_metadata 列 + RPC 事务写入
+do $t13$
+declare
+  v_room uuid;
+  v_meta jsonb := jsonb_build_object(
+    'packId', 'test-pack',
+    'schemaVersion', 1,
+    'packVersion', '2026.09.1',
+    'checksum', 'sha256:' || repeat('a', 64)
+  );
+begin
+  perform set_config('role', 'service_role', true);
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'rooms' and column_name = 'data_pack_metadata'
+  ) then
+    raise exception 'rooms 缺少 data_pack_metadata 列（0003 迁移未应用？）';
+  end if;
+
+  select room_id into v_room from public.create_room_transaction(
+    gen_random_uuid(), 'BLUE', '元数据房主', '{"demo": "v4"}'::jsonb, '[{"id":"n1","enabled":true}]'::jsonb, v_meta
+  );
+  if (select data_pack_metadata from public.rooms where id = v_room) <> v_meta then
+    raise exception 'create_room_transaction 未写入 data_pack_metadata';
+  end if;
+  raise notice 'CHECK-PASS: rooms.data_pack_metadata 由创建 RPC 事务写入';
+
+  delete from public.rooms where id = v_room;
+end $t13$;
 
 do $done$
 begin

@@ -10,7 +10,7 @@
 export const STORAGE_PREFIX = 'ninja-bp.'
 
 /** 当前存储 schema 版本。修改数据结构时递增并补充 migrator。 */
-export const STORAGE_SCHEMA_VERSION = 2
+export const STORAGE_SCHEMA_VERSION = 3
 
 export const STORAGE_KEYS = {
   ninjaPool: 'ninja_pool',
@@ -19,6 +19,11 @@ export const STORAGE_KEYS = {
   currentMatch: 'current_match',
   recentMatches: 'recent_matches',
   bpTimer: 'bp_timer',
+  // v0.4 数据包体系
+  activeDataPack: 'active_data_pack',
+  installedDataPacks: 'installed_data_packs',
+  dataPackUpdateState: 'data_pack_update_state',
+  customNinjaPool: 'custom_ninja_pool',
 } as const
 
 interface Wrapped<T> {
@@ -45,6 +50,20 @@ function getLocalStorage(): Storage | null {
 }
 
 export type Migrator = (legacyData: unknown, fromVersion: number) => unknown
+
+/**
+ * v2 → v3 数据包体系迁移。
+ *
+ * v0.3.x 的忍者池（ninja_pool）在 v3 中继续作为「当前生效池」的镜像使用；
+ * 结构本身不变，因此数据原样通过。来源分类（内置 / 数据包 / 自定义）由
+ * dataPackStore 在首次初始化时判定（与内置示例池逐条比较）。
+ * 其它 key 的 v2 数据形状在 v3 中保持不变，同样原样通过。
+ */
+export function migrateStorageV2ToV3(legacyData: unknown, _fromVersion: number): unknown {
+  // v1/v2 与 v3 的共有结构均无字段增删；保留函数作为显式迁移点，
+  // 未来 v3 内部结构变化时在此按 _fromVersion 分支处理。
+  return legacyData
+}
 
 /**
  * 读取并解析 JSON：
@@ -93,15 +112,23 @@ export function loadJSON<T>(
   }
 }
 
-/** 写入：统一包装版本号 */
-export function saveJSON(key: string, value: unknown): void {
+export type SaveResult = 'ok' | 'quota' | 'error'
+
+/** 写入：统一包装版本号。返回结果便于上层提示（存储空间不足时不崩溃）。 */
+export function saveJSON(key: string, value: unknown): SaveResult {
   const ls = getLocalStorage()
-  if (!ls) return
+  if (!ls) return 'error'
   try {
     const wrapped: Wrapped<unknown> = { __v: STORAGE_SCHEMA_VERSION, data: value }
     ls.setItem(fullKey(key), JSON.stringify(wrapped))
+    return 'ok'
   } catch (err) {
+    if (err instanceof DOMException && (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+      console.warn(`[storage] "${key}" 写入失败：本地存储空间不足`)
+      return 'quota'
+    }
     console.warn(`[storage] "${key}" 写入失败：`, err)
+    return 'error'
   }
 }
 

@@ -3,6 +3,7 @@ import App from './App'
 import HomePage from '@/pages/HomePage'
 import BPPage from '@/pages/BPPage'
 import NinjaPoolPage from '@/pages/NinjaPoolPage'
+import DataPackPage from '@/pages/DataPackPage'
 import SettingsPage from '@/pages/SettingsPage'
 import ResultPage from '@/pages/ResultPage'
 import AboutPage from '@/pages/AboutPage'
@@ -27,6 +28,7 @@ export const router = createBrowserRouter(
         { path: 'online', element: <OnlineHubPage /> },
         { path: 'room/:code', element: <RoomPage /> },
         { path: 'ninjas', element: <NinjaPoolPage /> },
+        { path: 'data', element: <DataPackPage /> },
         { path: 'settings', element: <SettingsPage /> },
         { path: 'result/:id', element: <ResultPage /> },
         { path: 'about', element: <AboutPage /> },

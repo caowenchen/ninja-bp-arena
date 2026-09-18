@@ -1,10 +1,13 @@
 import { create } from 'zustand'
-import type { BattleRule, MatchState, OnlineCommandType, PendingUndo, RoomStatus, Seat } from '@bp-core'
+import type { BattleRule, MatchState, Ninja, OnlineCommandType, OnlineNinjaSnapshot, PendingUndo, RoomStatus, Seat } from '@bp-core'
+import { toOnlineNinjaSnapshots } from '@bp-core'
 import { supabase, isOnlineConfigured } from '@/lib/supabase'
 import { getPhase } from '@bp-core'
 import { roomApi } from './roomClient'
 import { useNinjaStore } from '@/store/ninjaStore'
+import { useDataPackStore, parseRoomNinjaSnapshot } from '@/dataPack/store'
 import type { ConnectionState, PresenceEntry, RoomMember } from './types'
+import type { MatchPackMetadata } from '@bp-core'
 
 /**
  * 在线房间 Store。
@@ -37,6 +40,10 @@ interface OnlineRoomState {
   lastError: { code: string; message: string } | null
   presence: Record<string, PresenceEntry>
   onlineNinjaIds: string[] | null
+  /** v0.4：房间的忍者快照（显示权威，双方一致；旧房间为 null） */
+  roomNinjas: Ninja[] | null
+  /** v0.4：房间的数据包元信息（等待页展示 + 加入一致性提示） */
+  roomPackMetadata: MatchPackMetadata | null
 
   ensureAuth: () => Promise<boolean>
   createRoom: (input: { displayName: string; seat: 'BLUE' | 'RED'; rule: MatchState['rule'] }) => Promise<{ ok: boolean; code?: string; error?: string }>
@@ -100,6 +107,8 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
   lastError: null,
   presence: {},
   onlineNinjaIds: null,
+  roomNinjas: null,
+  roomPackMetadata: null,
 
   // ---- 匿名认证：首次进入在线模式自动 signInAnonymously ----
   ensureAuth: async () => {
@@ -123,8 +132,24 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
     try {
       const authOk = await get().ensureAuth()
       if (!authOk) return { ok: false, error: '进入在线模式失败' }
-      const pool = useNinjaStore.getState().ninjas.map((n) => ({ id: n.id, enabled: n.enabled }))
-      const identity = await roomApi.createRoom({ displayName, seat, rule: rule as BattleRule, pool })
+      const ninjaStore = useNinjaStore.getState()
+      const pool = ninjaStore.ninjas.map((n) => ({ id: n.id, enabled: n.enabled }))
+      // v0.4：房间固化完整轻量快照（id/name/enabled/quality/avatar/assetKey），
+      // 加入方以它为显示权威，双方数据包版本不同也不会显示不同角色
+      const pack = useDataPackStore.getState().activePack()
+      const ninjas: OnlineNinjaSnapshot[] = toOnlineNinjaSnapshots(
+        ninjaStore.ninjas,
+        pack?.manifest.assetBaseUrl,
+      )
+      const packMetadata = pack
+        ? {
+            packId: pack.manifest.id,
+            schemaVersion: pack.manifest.schemaVersion,
+            packVersion: pack.manifest.version,
+            checksum: pack.manifest.checksum,
+          }
+        : undefined
+      const identity = await roomApi.createRoom({ displayName, seat, rule: rule as BattleRule, pool, ninjas, packMetadata })
       const entered = await get().enterRoom(identity.roomId, identity.code)
       return entered.ok ? { ok: true, code: identity.code } : { ok: false, error: entered.error }
     } catch (err) {
@@ -166,17 +191,19 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
         return { ok: false, error: '房间不存在或你没有加入该房间' }
       }
       const userId = get().userId
-      const mySeat = deriveMySeat(snap.members, userId)
+      const parsed = parseRoomNinjaSnapshot(snap.room.pool)
       set({
         roomStatus: snap.room.status,
         roomExpiresAt: new Date(snap.room.expires_at).getTime(),
         match: snap.room.match_state,
         revision: snap.room.revision,
         members: snap.members,
-        mySeat,
+        mySeat: deriveMySeat(snap.members, userId),
         isHost: snap.room.host_user_id === userId,
         pendingUndo: snap.room.pending_action ?? null,
-        onlineNinjaIds: Array.isArray(snap.room.pool) ? snap.room.pool.map((n) => n.id) : null,
+        onlineNinjaIds: Array.isArray(snap.room.pool) ? snap.room.pool.map((n) => (n as { id?: unknown }).id as string) : null,
+        roomNinjas: parsed.valid && parsed.ninjas.length > 0 ? parsed.ninjas : null,
+        roomPackMetadata: (snap.room.data_pack_metadata as MatchPackMetadata | null) ?? null,
       })
 
       // 订阅：postgres_changes 通知 → 重新拉取权威快照；presence 只做在线展示
@@ -251,6 +278,7 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
       const snap = await roomApi.fetchSnapshot(roomId)
       if (!snap.room) return
       const userId = get().userId
+      const parsed = parseRoomNinjaSnapshot(snap.room.pool)
       set({
         roomStatus: snap.room.status,
         roomExpiresAt: new Date(snap.room.expires_at).getTime(),
@@ -260,6 +288,9 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
         mySeat: deriveMySeat(snap.members, userId),
         isHost: snap.room.host_user_id === userId,
         pendingUndo: snap.room.pending_action ?? null,
+        onlineNinjaIds: Array.isArray(snap.room.pool) ? snap.room.pool.map((n) => (n as { id?: unknown }).id as string) : null,
+        roomNinjas: parsed.valid && parsed.ninjas.length > 0 ? parsed.ninjas : null,
+        roomPackMetadata: (snap.room.data_pack_metadata as MatchPackMetadata | null) ?? null,
         connection: get().connection === 'syncing' ? 'connected' : get().connection,
       })
     } catch {
@@ -342,6 +373,9 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
       connection: 'idle',
       pendingCommand: null,
       presence: {},
+      onlineNinjaIds: null,
+      roomNinjas: null,
+      roomPackMetadata: null,
     })
   },
 
