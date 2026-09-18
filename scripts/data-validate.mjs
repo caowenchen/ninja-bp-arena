@@ -24,13 +24,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const packDir = join(root, 'data', 'packs', 'default')
 const manifestPath = join(packDir, 'manifest.json')
 const ninjasPath = join(packDir, 'ninjas.json')
+const secretScrollsPath = join(packDir, 'secret-scrolls.json')
+const summonsPath = join(packDir, 'summons.json')
 
 const fixChecksum = process.argv.includes('--fix-checksum')
 const errors = []
-
-function canonical(text) {
-  return JSON.stringify(JSON.parse(text))
-}
 
 function sha256(text) {
   return createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex')
@@ -51,9 +49,18 @@ try {
   console.error(`✗ ninjas.json 解析失败：${err.message}`)
   process.exit(1)
 }
+let secretScrolls
+let summons
+try {
+  secretScrolls = JSON.parse(readFileSync(secretScrollsPath, 'utf8'))
+  summons = JSON.parse(readFileSync(summonsPath, 'utf8'))
+} catch (err) {
+  console.error(`✗ 辅助资源 JSON 解析失败：${err.message}`)
+  process.exit(1)
+}
 
 // ---- manifest 结构 ----
-if (manifest.schemaVersion !== 1) errors.push(`manifest.schemaVersion 必须是 1（当前 ${manifest.schemaVersion}）`)
+if (manifest.schemaVersion !== 2) errors.push(`manifest.schemaVersion 必须是 2（当前 ${manifest.schemaVersion}）`)
 if (typeof manifest.id !== 'string' || !manifest.id.trim()) errors.push('manifest.id 不能为空')
 if (typeof manifest.name !== 'string' || !manifest.name.trim()) errors.push('manifest.name 不能为空')
 if (typeof manifest.version !== 'string' || !manifest.version.trim()) errors.push('manifest.version 不能为空')
@@ -65,6 +72,8 @@ if (typeof manifest.updatedAt !== 'string' || Number.isNaN(Date.parse(manifest.u
 if (manifest.ninjaCount !== ninjas.length) {
   errors.push(`manifest.ninjaCount(${manifest.ninjaCount}) 与 ninjas.length(${ninjas.length}) 不一致`)
 }
+if (manifest.secretScrollCount !== secretScrolls.length) errors.push(`manifest.secretScrollCount(${manifest.secretScrollCount}) 与 secretScrolls.length(${secretScrolls.length}) 不一致`)
+if (manifest.summonCount !== summons.length) errors.push(`manifest.summonCount(${manifest.summonCount}) 与 summons.length(${summons.length}) 不一致`)
 
 // ---- 忍者条目 ----
 const seen = new Set()
@@ -102,8 +111,28 @@ ninjas.forEach((n, i) => {
   if (n.deprecated !== undefined && typeof n.deprecated !== 'boolean') errors.push(`${label}.deprecated 必须是 boolean`)
 })
 
+function validateAux(items, key) {
+  items.forEach((item, i) => {
+    const label = `${key}[${i}]`
+    if (typeof item.id !== 'string' || !item.id.trim()) errors.push(`${label}.id 不能为空`)
+    else if (item.id.length > 100) errors.push(`${label}.id 过长`)
+    if (seen.has(item.id)) errors.push(`${label}.id "${item.id}" 全局重复`)
+    if (item.id) seen.add(item.id)
+    if (typeof item.name !== 'string' || !item.name.trim() || item.name.length > 40) errors.push(`${label}.name 非法`)
+    if (typeof item.enabled !== 'boolean') errors.push(`${label}.enabled 必须是 boolean`)
+    if (!isStringArray(item.tags)) errors.push(`${label}.tags 必须是 string[]`)
+    if (item.aliases !== undefined && !isStringArray(item.aliases)) errors.push(`${label}.aliases 必须是 string[]`)
+    for (const field of ['asset', 'avatar']) {
+      if (item[field] !== undefined && (typeof item[field] !== 'string' || item[field].length > 500)) errors.push(`${label}.${field} 非法或过长`)
+    }
+    if (item.assetKey !== undefined && (typeof item.assetKey !== 'string' || item.assetKey.length > 200)) errors.push(`${label}.assetKey 非法或过长`)
+  })
+}
+validateAux(secretScrolls, 'secretScrolls')
+validateAux(summons, 'summons')
+
 // ---- checksum ----
-const computed = `sha256:${sha256(canonical(readFileSync(ninjasPath, 'utf8')))}`.trim()
+const computed = `sha256:${sha256(JSON.stringify({ ninjas, secretScrolls, summons }))}`.trim()
 if (fixChecksum) {
   manifest.checksum = computed
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
@@ -118,4 +147,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error(`  - ${e}`)
   process.exit(1)
 }
-console.log(`✓ 数据包「${manifest.name}」v${manifest.version}：${ninjas.length} 名忍者，checksum 一致`)
+console.log(`✓ 数据包「${manifest.name}」v${manifest.version}：${ninjas.length} 忍者 / ${secretScrolls.length} 秘卷 / ${summons.length} 通灵，checksum 一致`)

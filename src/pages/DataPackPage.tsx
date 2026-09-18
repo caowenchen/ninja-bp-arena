@@ -78,6 +78,7 @@ export default function DataPackPage() {
   const removePack = useDataPackStore((s) => s.removePack)
   const setAutoCheckEnabled = useDataPackStore((s) => s.setAutoCheckEnabled)
   const installPack = useDataPackStore((s) => s.installPack)
+  const setAuxResourceEnabled = useDataPackStore((s) => s.setAuxResourceEnabled)
 
   const ninjas = useNinjaStore((s) => s.ninjas)
   const poolSource = useDataPackStore((s) => s.poolSource())
@@ -96,6 +97,8 @@ export default function DataPackPage() {
   const [checking, setChecking] = useState(false)
   const [pendingDiff, setPendingDiff] = useState<{ pack: InstalledDataPack; diff: DataPackDiff; addedIds: string[] } | null>(null)
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
+  const [resourceSearch, setResourceSearch] = useState('')
+  const [resourceTab, setResourceTab] = useState<'SECRET_SCROLL' | 'SUMMON'>('SECRET_SCROLL')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const csvInputRef = useRef<HTMLInputElement>(null)
 
@@ -129,10 +132,12 @@ export default function DataPackPage() {
     const pack = {
       manifest: parsed.manifest,
       ninjas: parsed.ninjas,
+      secretScrolls: parsed.secretScrolls ?? [],
+      summons: parsed.summons ?? [],
       origin: 'FILE' as const,
       installedAt: new Date().toISOString(),
     }
-    const diff = diffPacks({ ninjas }, pack)
+    const diff = diffPacks({ ninjas, secretScrolls: activePack?.secretScrolls ?? [], summons: activePack?.summons ?? [] }, pack)
     // 与其它安装包比较（同 ID 覆盖）；激活决策交给用户在预览后确认
     setPendingDiff({ pack, diff, addedIds: diff.added.map((n) => n.id) })
   }
@@ -149,7 +154,8 @@ export default function DataPackPage() {
     if (result.status === 'NEWER') {
       const prepared = await useDataPackStore.getState().prepareRemoteUpdate(remoteUrl.trim())
       if (prepared.ok) {
-        const diff = diffPacks({ ninjas: useNinjaStore.getState().ninjas }, prepared.pack)
+        const current = useDataPackStore.getState().activePack()
+        const diff = diffPacks({ ninjas: useNinjaStore.getState().ninjas, secretScrolls: current?.secretScrolls ?? [], summons: current?.summons ?? [] }, prepared.pack)
         setPendingDiff({ pack: prepared.pack, diff, addedIds: prepared.addedIds })
       } else {
         toast(prepared.message, 'error')
@@ -164,7 +170,7 @@ export default function DataPackPage() {
   }
 
   const handleExportBundle = async () => {
-    const source = activePack ?? { manifest: { id: 'custom', name: '自定义忍者数据', schemaVersion: 1, version: 'local', updatedAt: new Date().toISOString(), ninjaCount: ninjas.length }, ninjas }
+    const source = activePack ?? { manifest: { id: 'custom', name: '自定义忍者数据', schemaVersion: 2, version: 'local', updatedAt: new Date().toISOString(), ninjaCount: ninjas.length, secretScrollCount: 0, summonCount: 0 }, ninjas, secretScrolls: [], summons: [] }
     const text = await exportDataPackBundle(source)
     downloadTextFile(`ninja-data-pack-${fileTimestamp(Date.now())}.json`, text)
     toast('数据包 JSON 已导出', 'success')
@@ -185,15 +191,19 @@ export default function DataPackPage() {
     installPack(
       {
         manifest: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           id: `custom-${Date.now().toString(36)}`,
           name: `自定义数据（${file.name}）`,
           version: 'csv-1',
           updatedAt: new Date().toISOString(),
           ninjaCount: parsed.ninjas.length,
+          secretScrollCount: 0,
+          summonCount: 0,
           description: '由 CSV 导入生成的自定义数据包',
         },
         ninjas: parsed.ninjas,
+        secretScrolls: [],
+        summons: [],
         origin: 'FILE',
         installedAt: new Date().toISOString(),
       },
@@ -220,7 +230,7 @@ export default function DataPackPage() {
           <div>
             <h2 className="text-sm font-bold text-fog-100">{activePack?.manifest.name ?? '自定义忍者数据'}</h2>
             <p className="mt-1 text-xs text-fog-500">
-              {activePack ? `v${activePack.manifest.version}` : '未绑定数据包'} · {health.total} 名忍者
+              {activePack ? `v${activePack.manifest.version}` : '未绑定数据包'} · {health.total} 名忍者 · {activePack?.secretScrolls.length ?? 0} 个秘卷 · {activePack?.summons.length ?? 0} 个通灵
               {activePack ? ` · ${new Date(activePack.manifest.updatedAt).toLocaleDateString()}` : ''}
             </p>
             <p className="mt-0.5 text-[11px] text-fog-600">
@@ -263,6 +273,40 @@ export default function DataPackPage() {
         </p>
       </section>
 
+      <section className="mt-4 rounded-lg border border-border-muted bg-surface-1/50 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-bold text-fog-100">辅助资源（Demo / 数据包内容）</h2>
+            <p className="mt-1 text-[11px] text-fog-600">可查看、搜索并启用/停用秘卷与通灵；修改内置包时会生成本地副本。</p>
+          </div>
+          <input value={resourceSearch} onChange={(event) => setResourceSearch(event.target.value)} placeholder="搜索名称、别名或标签" className="rounded border border-ink-500 bg-ink-900 px-3 py-1.5 text-xs text-fog-100" />
+        </div>
+        <div className="mt-3 flex gap-2">
+          {(['SECRET_SCROLL', 'SUMMON'] as const).map((type) => (
+            <button key={type} type="button" aria-pressed={resourceTab === type} onClick={() => setResourceTab(type)} className={`rounded px-3 py-1.5 text-xs ${resourceTab === type ? 'bg-gold-accent text-ink-950' : 'border border-ink-500 text-fog-400'}`}>
+              {type === 'SECRET_SCROLL' ? `秘卷 ${activePack?.secretScrolls.length ?? 0}` : `通灵 ${activePack?.summons.length ?? 0}`}
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {(resourceTab === 'SECRET_SCROLL' ? activePack?.secretScrolls ?? [] : activePack?.summons ?? [])
+            .filter((item) => !resourceSearch.trim() || [item.name, ...(item.aliases ?? []), ...(item.tags ?? [])].join(' ').toLocaleLowerCase().includes(resourceSearch.trim().toLocaleLowerCase()))
+            .map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-3 rounded border border-ink-600 bg-ink-900/60 p-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-fog-200">{item.name}</p>
+                  <p className="truncate text-[10px] text-fog-600">{item.id} · {(item.tags ?? []).join(' / ') || '无标签'}</p>
+                </div>
+                <button type="button" aria-label={`${item.enabled ? '停用' : '启用'} ${item.name}`} onClick={() => {
+                  if (setAuxResourceEnabled(resourceTab, item.id, !item.enabled)) toast(`${item.name} 已${item.enabled ? '停用' : '启用'}`, 'success')
+                }} className={`shrink-0 rounded px-2 py-1 text-[10px] ${item.enabled ? 'bg-emerald-500/15 text-emerald-400' : 'bg-ink-600 text-fog-500'}`}>
+                  {item.enabled ? '已启用' : '已停用'}
+                </button>
+              </div>
+            ))}
+        </div>
+      </section>
+
       {/* 数据健康（真实计数） */}
       <section className="mt-4 rounded-lg border border-border-muted bg-surface-1/50 p-5">
         <h2 className="text-sm font-bold text-fog-100">数据健康</h2>
@@ -291,7 +335,7 @@ export default function DataPackPage() {
           <Globe size={15} /> 远程数据包
         </h2>
         <p className="mt-1 text-xs text-fog-600">
-          填入 manifest.json 地址（如 https://example.com/pack/manifest.json，ninjas.json 需同目录）。
+          填入 manifest.json 地址；v2 的 ninjas.json、secret-scrolls.json、summons.json 需同目录（v1 只需 ninjas.json）。
           只支持 https；自动检查每天最多一次，发现更新后由你确认是否应用。
         </p>
         <div className="mt-3 flex gap-2">
@@ -334,7 +378,7 @@ export default function DataPackPage() {
           <PackRow
             active={activePackId === BUILT_IN_PACK_ID}
             title={builtInPack().manifest.name}
-            subtitle={`v${builtInPack().manifest.version} · ${builtInPack().ninjas.length} 名 · 本地内置`}
+            subtitle={`v${builtInPack().manifest.version} · ${builtInPack().ninjas.length} 忍者 / ${builtInPack().secretScrolls.length} 秘卷 / ${builtInPack().summons.length} 通灵 · 本地内置`}
             onActivate={() => activateWithNotice(BUILT_IN_PACK_ID)}
           />
           {customPool && (
@@ -350,7 +394,7 @@ export default function DataPackPage() {
               key={pack.manifest.id}
               active={activePackId === pack.manifest.id}
               title={pack.manifest.name}
-              subtitle={`v${pack.manifest.version} · ${pack.ninjas.length} 名 · ${pack.origin === 'URL' ? '远程' : '文件导入'}`}
+              subtitle={`v${pack.manifest.version} · ${pack.ninjas.length} 忍者 / ${pack.secretScrolls.length} 秘卷 / ${pack.summons.length} 通灵 · ${pack.origin === 'URL' ? '远程' : '文件导入'}`}
               onActivate={() => activateWithNotice(pack.manifest.id)}
               onRemove={pack.manifest.id !== BUILT_IN_PACK_ID ? () => setRemoveTarget(pack.manifest.id) : undefined}
             />
@@ -518,6 +562,17 @@ function DiffPreviewDialog({ pending, onClose, onConfirm }: {
           <span className="rounded bg-red-500/15 px-2 py-1 text-red-300">移除 {summary.removed}</span>
           <span className="rounded bg-ink-600 px-2 py-1 text-fog-400">无变化 {diff.unchanged.length}</span>
         </div>
+        {diff.resources && (
+          <div className="grid gap-1 rounded border border-ink-600 p-2 text-[11px] text-fog-400 sm:grid-cols-3">
+            {([
+              ['忍者', diff.resources.ninjas],
+              ['秘卷', diff.resources.secretScrolls],
+              ['通灵', diff.resources.summons],
+            ] as const).map(([label, item]) => (
+              <p key={label}><span className="font-bold text-fog-200">{label}</span>：新增 {item.added.length} / 修改 {item.updated.length} / 停用 {item.updated.filter((entry) => entry.changedFields.some((field) => field.field === 'enabled' && field.after === false)).length} / 移除 {item.removed.length}</p>
+            ))}
+          </div>
+        )}
         {nameConflicts.length > 0 && (
           <p className="rounded border border-gold-accent/40 bg-gold-accent/10 p-2 text-xs text-gold-accent">
             有 {nameConflicts.length} 个 ID 相同但名称不同的条目（如 {nameConflicts[0].name}），请确认是同一名角色的数据更新。

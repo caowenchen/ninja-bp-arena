@@ -1,4 +1,4 @@
-import type { Ninja, NinjaDataPackManifest } from '@bp-core'
+import type { DraftResourceBase, Ninja, NinjaDataPackManifest } from '@bp-core'
 
 /**
  * Ninja Asset Resolver —— 头像 URL 的唯一解析入口。
@@ -26,6 +26,14 @@ export function resolveNinjaAsset(ninja: Pick<Ninja, 'avatar' | 'assetKey'>, pac
   }
   // 4. 无素材（Placeholder）
   return undefined
+}
+
+export function resolveResourceAsset(
+  resource: Pick<DraftResourceBase, 'asset' | 'avatar' | 'assetKey'>,
+  packManifest?: Pick<NinjaDataPackManifest, 'assetBaseUrl'> | null,
+): string | undefined {
+  if (resource.asset?.trim()) return resource.asset
+  return resolveNinjaAsset(resource, packManifest)
 }
 
 // ---------------------------------------------------------------------------

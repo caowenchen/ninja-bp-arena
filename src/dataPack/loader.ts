@@ -1,6 +1,8 @@
 import type { InstalledDataPack, Ninja } from '@bp-core'
 import manifestJson from '../../data/packs/default/manifest.json'
 import ninjasJson from '../../data/packs/default/ninjas.json'
+import secretScrollsJson from '../../data/packs/default/secret-scrolls.json'
+import summonsJson from '../../data/packs/default/summons.json'
 
 /**
  * 内置默认数据包（构建时静态打包，运行时零网络请求）。
@@ -13,12 +15,16 @@ export const BUILT_IN_MANIFEST = manifestJson as unknown as InstalledDataPack['m
 
 /** 内置包忍者（运行时只读；使用方需要可变副本时自行拷贝） */
 export const BUILT_IN_NINJAS = ninjasJson as unknown as Ninja[]
+export const BUILT_IN_SECRET_SCROLLS = secretScrollsJson as unknown as InstalledDataPack['secretScrolls']
+export const BUILT_IN_SUMMONS = summonsJson as unknown as InstalledDataPack['summons']
 
 /** 内置包安装记录 */
 export function builtInPack(): InstalledDataPack {
   return {
     manifest: { ...BUILT_IN_MANIFEST },
     ninjas: BUILT_IN_NINJAS,
+    secretScrolls: BUILT_IN_SECRET_SCROLLS,
+    summons: BUILT_IN_SUMMONS,
     origin: 'BUILT_IN',
     installedAt: BUILT_IN_MANIFEST.updatedAt,
   }

@@ -7,27 +7,37 @@
  */
 
 // ---------------------------------------------------------------------------
-// 忍者
+// Draft resources
 // ---------------------------------------------------------------------------
+
+export type DraftResourceType = 'NINJA' | 'SECRET_SCROLL' | 'SUMMON'
+
+/**
+ * 所有可 BP 资源的稳定公共形态。id 是永久引用，显示名变化不得改变 id。
+ */
+export interface DraftResourceBase {
+  id: string
+  name: string
+  aliases?: string[]
+  /** 显式素材 URL（可选；data: URL 永远不允许进入在线快照） */
+  asset?: string
+  /** 兼容 v0.4 Ninja.avatar；新代码统一经 Resource Registry / Asset Resolver 读取 */
+  avatar?: string
+  assetKey?: string
+  tags: string[]
+  enabled: boolean
+  deprecated?: boolean
+  dataVersion?: string
+  sortOrder?: number
+  version?: string
+  remark?: string
+}
 
 export type NinjaQuality = 'S' | 'A' | 'B' | 'C'
 
-export interface Ninja {
-  id: string
-  name: string
-  /** 别名：用于搜索（如「秽土斑」可指向正式名称），不代表官方设定 */
-  aliases?: string[]
-  /** 头像：支持 https(s) 远程地址或 /assets/ninjas/xxx.webp 本地资源 */
-  avatar?: string
+export interface Ninja extends DraftResourceBase {
   quality: NinjaQuality
-  tags: string[]
-  enabled: boolean
-  /** 自定义排序权重（小者靠前），可选 */
-  sortOrder?: number
-
-  version?: string
   releaseDate?: string
-  remark?: string
 
   // ---- v0.4 数据包字段（全部可选，向后兼容）----
   /** 稳定短标识：搜索 / URL / 展示用；id 才是永久引用，改名时保持 id 不变 */
@@ -41,12 +51,17 @@ export interface Ninja {
   /** 品质显示名（数据源原始叫法），仅展示 */
   rarityLabel?: string
   /** 该条数据最后所在的包内容版本（如 2026.08.1） */
-  dataVersion?: string
-  /** 素材键：配合 manifest.assetBaseUrl 拼出头像 URL，数据 JSON 不写长 URL */
-  assetKey?: string
-  /** 已下架 / 不再可用：保留记录（历史引用），不出现在可选池 */
-  deprecated?: boolean
 }
+
+export interface SecretScroll extends DraftResourceBase {
+  resourceType?: 'SECRET_SCROLL'
+}
+
+export interface Summon extends DraftResourceBase {
+  resourceType?: 'SUMMON'
+}
+
+export type DraftResource = Ninja | SecretScroll | Summon
 
 export const NINJA_QUALITIES: NinjaQuality[] = ['S', 'A', 'B', 'C']
 
@@ -76,6 +91,24 @@ export interface BPSequenceStep {
   count: number
 }
 
+export interface ResourceDraftSequenceStep extends BPSequenceStep {
+  resourceType: DraftResourceType
+}
+
+/** 一类资源的完整 Draft 规则；顺序、唯一性与跨局行为均来自规则而非 UI。 */
+export interface ResourceDraftRule {
+  resourceType: DraftResourceType
+  enabled: boolean
+  slotsPerSide: number
+  sequence: BPSequenceStep[]
+  crossGameLock: boolean
+  uniqueAcrossSides: boolean
+  banPersistence: boolean
+  banOnlyFirstGame?: boolean
+  resetEachGame: boolean
+  timerSeconds?: number
+}
+
 /**
  * 比赛规则模板。所有 BP 流程（Ban/Pick 顺序、数量、继承关系、倒计时）
  * 都由该配置驱动，UI 与引擎不允许硬编码比赛流程。
@@ -103,6 +136,9 @@ export interface BattleRule {
 
   timerEnabled: boolean
   timerSeconds: number
+
+  /** v0.5 通用资源规则；缺失时严格按 v0.4 Ninja-only 字段运行。 */
+  resourceDrafts?: ResourceDraftRule[]
 }
 
 /** 一次 Ban / Pick 操作记录 */
@@ -112,6 +148,9 @@ export interface BPAction {
   side: Side
   action: BPActionType
   ninjaId: string
+  /** v0.5 主引用；旧记录缺失时按 NINJA + ninjaId 迁移读取。 */
+  resourceType?: DraftResourceType
+  resourceId?: string
   timestamp: number
   /** 在整局展开序列中的序号（0 起） */
   sequenceIndex: number
@@ -128,6 +167,8 @@ export const ACTION_TEXT: Record<BPActionType, string> = { BAN: '禁用', PICK: 
 export interface PlayerGameState {
   bans: string[]
   picks: string[]
+  /** 辅助资源结果保持数组顺序；NINJA 仍使用上方 v0.4 字段兼容旧数据。 */
+  resources?: Partial<Record<'SECRET_SCROLL' | 'SUMMON', { bans: string[]; picks: string[] }>>
 }
 
 /** 一局的 BP 状态。started 表示已从 GAME READY 进入比赛阶段。 */
@@ -176,6 +217,8 @@ export interface MatchState {
   dataPack?: MatchPackMetadata
   /** 比赛创建时的忍者池轻量快照：名称 / 品质 / 头像的显示权威来源 */
   ninjaSnapshot?: OnlineNinjaSnapshot[]
+  /** v0.5 完整 Battle Resource Snapshot；ninjaSnapshot 保留作旧代码/旧房间 fallback。 */
+  resourceSnapshot?: BattleResourceSnapshot
 }
 
 /** 比赛记录的数据包元信息（历史比赛据它知道当时用的是哪个数据版本） */
@@ -198,6 +241,24 @@ export interface OnlineNinjaSnapshot {
   quality: NinjaQuality
   avatar?: string
   assetKey?: string
+}
+
+export interface OnlineResourceSnapshot {
+  resourceType: DraftResourceType
+  id: string
+  name: string
+  enabled: boolean
+  quality?: NinjaQuality
+  asset?: string
+  avatar?: string
+  assetKey?: string
+  tags?: string[]
+}
+
+export interface BattleResourceSnapshot {
+  ninjas: OnlineNinjaSnapshot[]
+  secretScrolls: OnlineResourceSnapshot[]
+  summons: OnlineResourceSnapshot[]
 }
 
 /** 引擎操作的统一返回，UI 据此决定 Toast 提示 */

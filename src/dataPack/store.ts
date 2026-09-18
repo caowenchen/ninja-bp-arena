@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { InstalledDataPack, MatchPackMetadata, Ninja, NinjaDataPackManifest, OnlineNinjaSnapshot } from '@bp-core'
-import { isRemotePackNewer, toOnlineNinjaSnapshots, validateDataPack, validateOnlineNinjaSnapshot, validatePackNinja } from '@bp-core'
+import type { BattleResourceSnapshot, InstalledDataPack, MatchPackMetadata, Ninja, NinjaDataPackManifest, OnlineNinjaSnapshot } from '@bp-core'
+import { isRemotePackNewer, migrateDataPackV1ToV2, toBattleResourceSnapshot, validateBattleDataPack, validateOnlineNinjaSnapshot, validatePackNinja } from '@bp-core'
 import { useNinjaStore, setPoolMutationHook } from '@/store/ninjaStore'
 import { loadJSON, saveJSON, STORAGE_KEYS } from '@/utils/storage'
 import { BUILT_IN_PACK_ID, type DataPackUpdateState, type NinjaPoolSource } from './types'
@@ -56,6 +56,7 @@ interface DataPackStore {
   activatePack: (id: string) => void
   /** 删除已安装包（内置不可删；激活中的包先切换） */
   removePack: (id: string) => { ok: boolean; error?: string }
+  setAuxResourceEnabled: (type: 'SECRET_SCROLL' | 'SUMMON', id: string, enabled: boolean) => boolean
 
   // ---- 远程更新 ----
   /** 检查远程更新（force = 忽略每日频率限制） */
@@ -88,8 +89,20 @@ function loadInstalled(): InstalledDataPack[] {
   for (const item of raw) {
     const rec = item as Record<string, unknown>
     const manifest = rec?.manifest as NinjaDataPackManifest | undefined
-    if (manifest && Array.isArray(rec.ninjas) && validateDataPack(manifest, rec.ninjas).length === 0) {
-      valid.push(item as InstalledDataPack)
+    const secretScrolls = Array.isArray(rec.secretScrolls) ? rec.secretScrolls : []
+    const summons = Array.isArray(rec.summons) ? rec.summons : []
+    if (manifest && Array.isArray(rec.ninjas) && validateBattleDataPack(manifest, rec.ninjas, secretScrolls, summons).length === 0) {
+      const migrated = migrateDataPackV1ToV2({
+        manifest,
+        ninjas: rec.ninjas as Ninja[],
+        secretScrolls: secretScrolls as InstalledDataPack['secretScrolls'],
+        summons: summons as InstalledDataPack['summons'],
+      })
+      valid.push({
+        ...(item as InstalledDataPack),
+        ...migrated,
+        manifest: manifest.schemaVersion === 1 ? { ...migrated.manifest, checksum: undefined } : migrated.manifest,
+      })
     }
   }
   return valid
@@ -224,7 +237,8 @@ export const useDataPackStore = create<DataPackStore>()((set, get) => ({
   },
 
   installPack: (pack, options) => {
-    const diff = diffPacks({ ninjas: useNinjaStore.getState().ninjas }, pack)
+    const current = get().activePack()
+    const diff = diffPacks({ ninjas: useNinjaStore.getState().ninjas, secretScrolls: current?.secretScrolls ?? [], summons: current?.summons ?? [] }, pack)
     const installed = get().installedPacks.filter((p) => p.manifest.id !== pack.manifest.id)
     set({ installedPacks: [...installed, pack] })
     if (options?.activate !== false) {
@@ -270,6 +284,36 @@ export const useDataPackStore = create<DataPackStore>()((set, get) => ({
     return { ok: true }
   },
 
+  setAuxResourceEnabled: (type, id, enabled) => {
+    const source = get().activePack()
+    if (!source) return false
+    const key = type === 'SECRET_SCROLL' ? 'secretScrolls' : 'summons'
+    if (!source[key].some((item) => item.id === id)) return false
+    const derivedId = source.origin === 'BUILT_IN' ? `${source.manifest.id}-local` : source.manifest.id
+    const pack: InstalledDataPack = {
+      ...source,
+      manifest: {
+        ...source.manifest,
+        id: derivedId,
+        name: source.origin === 'BUILT_IN' ? `${source.manifest.name}（本地副本）` : source.manifest.name,
+        updatedAt: new Date().toISOString(),
+        checksum: undefined,
+      },
+      ninjas: source.ninjas.map((item) => ({ ...item })),
+      secretScrolls: source.secretScrolls.map((item) => ({ ...item })),
+      summons: source.summons.map((item) => ({ ...item })),
+      [key]: source[key].map((item) => item.id === id ? { ...item, enabled } : { ...item }),
+      origin: 'FILE',
+      installedAt: new Date().toISOString(),
+    }
+    set({
+      installedPacks: [...get().installedPacks.filter((item) => item.manifest.id !== derivedId), pack],
+      activePackId: derivedId,
+    })
+    get()._persist()
+    return true
+  },
+
   checkRemoteUpdate: async (url, options) => {
     const state = get().updateState
     const remote = state.remotes[url]
@@ -309,22 +353,34 @@ export const useDataPackStore = create<DataPackStore>()((set, get) => ({
     if (!pending) return { ok: false, message: '请先检查更新' }
     try {
       const ninjasText = await fetchRemoteNinjas(url, 'ninjas.json')
+      const secretScrollsText = pending.manifest.schemaVersion === 2
+        ? await fetchRemoteNinjas(url, 'secret-scrolls.json')
+        : '[]'
+      const summonsText = pending.manifest.schemaVersion === 2
+        ? await fetchRemoteNinjas(url, 'summons.json')
+        : '[]'
       const parsed = await parseDataPackBundle(
-        JSON.stringify({ manifest: pending.manifest, ninjas: JSON.parse(ninjasText) }),
+        JSON.stringify({
+          manifest: pending.manifest,
+          ninjas: JSON.parse(ninjasText),
+          secretScrolls: JSON.parse(secretScrollsText),
+          summons: JSON.parse(summonsText),
+        }),
       )
       if (!parsed.ok || !parsed.manifest || !parsed.ninjas) {
         return { ok: false, message: parsed.errors[0] ?? '数据包校验失败' }
       }
       // checksum：manifest 提供了就必须匹配（SHA-256 规范化 JSON）
-      if (pending.manifest.checksum && parsed.checksum !== pending.manifest.checksum) {
+      if (pending.manifest.schemaVersion === 2 && pending.manifest.checksum && parsed.checksum !== pending.manifest.checksum) {
         return { ok: false, message: '数据校验失败（checksum 不匹配），已取消更新' }
       }
       const pack = bundleToInstalledPack(
-        { manifest: parsed.manifest, ninjas: parsed.ninjas },
+        { manifest: parsed.manifest, ninjas: parsed.ninjas, secretScrolls: parsed.secretScrolls, summons: parsed.summons },
         'URL',
         url,
       )
-      const addedIds = diffPacks({ ninjas: useNinjaStore.getState().ninjas }, pack).added.map((n) => n.id)
+      const current = get().activePack()
+      const addedIds = diffPacks({ ninjas: useNinjaStore.getState().ninjas, secretScrolls: current?.secretScrolls ?? [], summons: current?.summons ?? [] }, pack).added.map((n) => n.id)
       return { ok: true, pack, addedIds }
     } catch (err) {
       if (err instanceof RemoteFetchError) return { ok: false, message: err.message }
@@ -466,12 +522,19 @@ export function currentPackMetadata(): MatchPackMetadata | null {
 }
 
 /** 比赛创建时的完整忍者池快照（Local Match Snapshot） */
-export function buildMatchPackSnapshot(): { dataPack?: MatchPackMetadata; ninjaSnapshot: OnlineNinjaSnapshot[] } {
+export function buildMatchPackSnapshot(): { dataPack?: MatchPackMetadata; ninjaSnapshot: OnlineNinjaSnapshot[]; resourceSnapshot: BattleResourceSnapshot } {
   const ninjaStore = useNinjaStore.getState()
   const pack = useDataPackStore.getState().activePack()
   const dataPack = currentPackMetadata()
+  const resources = {
+    ninjas: ninjaStore.ninjas,
+    secretScrolls: pack?.secretScrolls ?? [],
+    summons: pack?.summons ?? [],
+  }
+  const resourceSnapshot = toBattleResourceSnapshot(resources, pack?.manifest.assetBaseUrl)
   return {
     ...(dataPack ? { dataPack } : {}),
-    ninjaSnapshot: toOnlineNinjaSnapshots(ninjaStore.ninjas, pack?.manifest.assetBaseUrl),
+    ninjaSnapshot: resourceSnapshot.ninjas,
+    resourceSnapshot,
   }
 }

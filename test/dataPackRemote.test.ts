@@ -171,7 +171,7 @@ describe('比赛快照与历史压缩', () => {
 
   it('本地比赛快照包含嵌套的数据包元信息', () => {
     const snapshot = buildMatchPackSnapshot()
-    expect(snapshot.dataPack).toMatchObject({ packId: 'ninja-bp-default', schemaVersion: 1 })
+    expect(snapshot.dataPack).toMatchObject({ packId: 'ninja-bp-default', schemaVersion: 2 })
     expect(snapshot.ninjaSnapshot.length).toBeGreaterThan(0)
     expect('packId' in snapshot).toBe(false)
   })
@@ -199,8 +199,8 @@ describe('v0.3 默认池迁移', () => {
 
 describe('checksum 与 manifest 一致性（内置包）', () => {
   it('内置包 manifest.checksum 可由内容推出', async () => {
-    const { BUILT_IN_MANIFEST, BUILT_IN_NINJAS } = await import('../src/dataPack/loader')
-    const checksum = await computeJsonChecksum(JSON.stringify(BUILT_IN_NINJAS))
+    const { BUILT_IN_MANIFEST, BUILT_IN_NINJAS, BUILT_IN_SECRET_SCROLLS, BUILT_IN_SUMMONS } = await import('../src/dataPack/loader')
+    const checksum = await computeJsonChecksum(JSON.stringify({ ninjas: BUILT_IN_NINJAS, secretScrolls: BUILT_IN_SECRET_SCROLLS, summons: BUILT_IN_SUMMONS }))
     expect(BUILT_IN_MANIFEST.checksum).toBe(checksum)
     expect(BUILT_IN_MANIFEST.ninjaCount).toBe(BUILT_IN_NINJAS.length)
   })

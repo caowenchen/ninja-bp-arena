@@ -1,4 +1,5 @@
-import type { Ninja, NinjaQuality, OnlineNinjaSnapshot } from './types.ts'
+import type { DraftResourceBase, Ninja, NinjaQuality, OnlineNinjaSnapshot, SecretScroll, Summon } from './types.ts'
+import type { BattleResources } from './resourceRegistry.ts'
 
 /**
  * Ninja Data Pack —— 数据包核心逻辑（Shared BP Core）。
@@ -33,6 +34,9 @@ export interface NinjaDataPackManifest {
   description?: string
   /** 忍者数量（校验必须 === ninjas.length） */
   ninjaCount: number
+  /** v2 辅助资源数量；v1 导入时自动补 0。 */
+  secretScrollCount?: number
+  summonCount?: number
   /** ninjas.json 规范化 JSON 的 SHA-256（见 computeJsonChecksum）；存在则必须验证 */
   checksum?: string
   /** 头像素材基地址；配合 ninja.assetKey 拼出 URL */
@@ -40,12 +44,16 @@ export interface NinjaDataPackManifest {
 }
 
 /** 当前支持的 manifest 结构版本 */
-export const PACK_SCHEMA_VERSION = 1
+export const PACK_SCHEMA_VERSION = 2
+
+export type BattleDataPackManifest = NinjaDataPackManifest
 
 /** 已安装的数据包（本地持久化形态） */
 export interface InstalledDataPack {
   manifest: NinjaDataPackManifest
   ninjas: Ninja[]
+  secretScrolls: SecretScroll[]
+  summons: Summon[]
   /** 安装来源：内置 / 远程 URL / 本地文件导入 */
   origin: 'BUILT_IN' | 'URL' | 'FILE'
   /** origin = URL 时的 manifest 地址（检查更新用） */
@@ -84,8 +92,8 @@ function isValidReleaseDate(value: string): boolean {
 export function validateDataPackManifest(value: unknown): string[] {
   const errors: string[] = []
   if (!isRecord(value)) return ['manifest 必须是对象']
-  if (value.schemaVersion !== PACK_SCHEMA_VERSION) {
-    errors.push(`manifest.schemaVersion 必须是 ${PACK_SCHEMA_VERSION}（当前 ${String(value.schemaVersion)}）`)
+  if (value.schemaVersion !== 1 && value.schemaVersion !== PACK_SCHEMA_VERSION) {
+    errors.push(`manifest.schemaVersion 必须是 1 或 ${PACK_SCHEMA_VERSION}（当前 ${String(value.schemaVersion)}）`)
   }
   if (typeof value.id !== 'string' || value.id.trim() === '') errors.push('manifest.id 不能为空')
   else if (value.id.length > 100) errors.push('manifest.id 过长（>100）')
@@ -98,6 +106,14 @@ export function validateDataPackManifest(value: unknown): string[] {
   }
   if (typeof value.ninjaCount !== 'number' || !Number.isInteger(value.ninjaCount) || value.ninjaCount < 0) {
     errors.push('manifest.ninjaCount 必须是非负整数')
+  }
+  if (value.schemaVersion === 2) {
+    if (typeof value.secretScrollCount !== 'number' || !Number.isInteger(value.secretScrollCount) || value.secretScrollCount < 0) {
+      errors.push('manifest.secretScrollCount 必须是非负整数')
+    }
+    if (typeof value.summonCount !== 'number' || !Number.isInteger(value.summonCount) || value.summonCount < 0) {
+      errors.push('manifest.summonCount 必须是非负整数')
+    }
   }
   if (value.source !== undefined && (typeof value.source !== 'string' || value.source.length > 200)) {
     errors.push('manifest.source 过长（>200）')
@@ -174,13 +190,53 @@ export function validatePackNinja(value: unknown, index: number): string[] {
   return errors
 }
 
+export function validatePackResource(value: unknown, index: number, key: 'secretScrolls' | 'summons'): string[] {
+  const errors: string[] = []
+  const label = `${key}[${index}]`
+  if (!isRecord(value)) return [`${label} 不是对象`]
+  const rec = value as Record<string, unknown>
+  if (typeof rec.id !== 'string' || rec.id.trim() === '') errors.push(`${label}.id 不能为空`)
+  else if (rec.id.length > 100) errors.push(`${label}.id 过长（>100）`)
+  if (typeof rec.name !== 'string' || rec.name.trim() === '') errors.push(`${label}.name 不能为空`)
+  else if (rec.name.length > 40) errors.push(`${label}.name 过长（>40）`)
+  if (typeof rec.enabled !== 'boolean') errors.push(`${label}.enabled 必须是 boolean`)
+  if (rec.tags !== undefined && !isStringArray(rec.tags)) errors.push(`${label}.tags 必须是 string[]`)
+  if (rec.aliases !== undefined && !isStringArray(rec.aliases)) errors.push(`${label}.aliases 必须是 string[]`)
+  for (const field of ['asset', 'avatar'] as const) {
+    if (rec[field] !== undefined && (typeof rec[field] !== 'string' || rec[field].length > 500)) {
+      errors.push(`${label}.${field} 必须是长度不超过 500 的 string`)
+    }
+  }
+  if (rec.assetKey !== undefined && (typeof rec.assetKey !== 'string' || rec.assetKey.length > 200)) {
+    errors.push(`${label}.assetKey 必须是长度不超过 200 的 string`)
+  }
+  if (rec.deprecated !== undefined && typeof rec.deprecated !== 'boolean') errors.push(`${label}.deprecated 必须是 boolean`)
+  if (rec.dataVersion !== undefined && (typeof rec.dataVersion !== 'string' || rec.dataVersion.length > 40)) {
+    errors.push(`${label}.dataVersion 过长（>40）`)
+  }
+  return errors
+}
+
 /** 完整数据包校验（manifest + ninjas 全量检查）；返回全部错误 */
 export function validateDataPack(manifest: unknown, ninjas: unknown): string[] {
+  return validateBattleDataPack(manifest, ninjas, [], [])
+}
+
+/** 完整 Battle Data Pack v2 校验；v1 缺少辅助数组时按空数组处理。 */
+export function validateBattleDataPack(
+  manifest: unknown,
+  ninjas: unknown,
+  secretScrolls: unknown = [],
+  summons: unknown = [],
+): string[] {
   const errors = validateDataPackManifest(manifest)
   if (!Array.isArray(ninjas)) {
     errors.push('ninjas 必须是数组')
     return errors
   }
+  if (!Array.isArray(secretScrolls)) errors.push('secretScrolls 必须是数组')
+  if (!Array.isArray(summons)) errors.push('summons 必须是数组')
+  if (!Array.isArray(secretScrolls) || !Array.isArray(summons)) return errors
   if ((manifest as NinjaDataPackManifest | null)?.ninjaCount !== ninjas.length) {
     errors.push(`manifest.ninjaCount(${String((manifest as NinjaDataPackManifest | null)?.ninjaCount)}) 与 ninjas.length(${ninjas.length}) 不一致`)
   }
@@ -193,7 +249,53 @@ export function validateDataPack(manifest: unknown, ninjas: unknown): string[] {
       seenIds.add(id)
     }
   })
+  const typedManifest = manifest as NinjaDataPackManifest | null
+  if (typedManifest?.schemaVersion === 2 && typedManifest.secretScrollCount !== secretScrolls.length) {
+    errors.push(`manifest.secretScrollCount(${String(typedManifest.secretScrollCount)}) 与 secretScrolls.length(${secretScrolls.length}) 不一致`)
+  }
+  if (typedManifest?.schemaVersion === 2 && typedManifest.summonCount !== summons.length) {
+    errors.push(`manifest.summonCount(${String(typedManifest.summonCount)}) 与 summons.length(${summons.length}) 不一致`)
+  }
+  secretScrolls.forEach((item, index) => {
+    errors.push(...validatePackResource(item, index, 'secretScrolls'))
+    const id = isRecord(item) ? item.id : undefined
+    if (typeof id === 'string') {
+      if (seenIds.has(id)) errors.push(`secretScrolls[${index}].id "${id}" 全局重复`)
+      seenIds.add(id)
+    }
+  })
+  summons.forEach((item, index) => {
+    errors.push(...validatePackResource(item, index, 'summons'))
+    const id = isRecord(item) ? item.id : undefined
+    if (typeof id === 'string') {
+      if (seenIds.has(id)) errors.push(`summons[${index}].id "${id}" 全局重复`)
+      seenIds.add(id)
+    }
+  })
   return errors
+}
+
+/** v1 Ninja-only Bundle 到 v2 的无损内存迁移。 */
+export function migrateDataPackV1ToV2(input: {
+  manifest: NinjaDataPackManifest
+  ninjas: Ninja[]
+  secretScrolls?: SecretScroll[]
+  summons?: Summon[]
+}): { manifest: NinjaDataPackManifest; ninjas: Ninja[]; secretScrolls: SecretScroll[]; summons: Summon[] } {
+  const secretScrolls = input.secretScrolls ?? []
+  const summons = input.summons ?? []
+  return {
+    manifest: {
+      ...input.manifest,
+      schemaVersion: 2,
+      ninjaCount: input.ninjas.length,
+      secretScrollCount: secretScrolls.length,
+      summonCount: summons.length,
+    },
+    ninjas: input.ninjas,
+    secretScrolls,
+    summons,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +319,18 @@ export interface DataPackDiff {
   removed: Ninja[]
   updated: PackDiffUpdatedEntry[]
   unchanged: Ninja[]
+  resources?: {
+    ninjas: ResourceDataPackDiff<Ninja>
+    secretScrolls: ResourceDataPackDiff<SecretScroll>
+    summons: ResourceDataPackDiff<Summon>
+  }
+}
+
+export interface ResourceDataPackDiff<T extends DraftResourceBase = DraftResourceBase> {
+  added: T[]
+  removed: T[]
+  updated: PackDiffUpdatedEntry[]
+  unchanged: T[]
 }
 
 /** 参与逐字段比较的数据字段（展示与内容相关；remark 等不参与） */
@@ -261,6 +375,40 @@ export function compareDataPacks(oldNinjas: Ninja[], newNinjas: Ninja[]): DataPa
     if (!newNinjas.some((n) => n.id === prev.id)) diff.removed.push(prev)
   }
   return diff
+}
+
+function compareResourceLists<T extends DraftResourceBase>(oldItems: T[], newItems: T[]): ResourceDataPackDiff<T> {
+  const oldById = new Map(oldItems.map((item) => [item.id, item]))
+  const diff: ResourceDataPackDiff<T> = { added: [], removed: [], updated: [], unchanged: [] }
+  for (const next of newItems) {
+    const prev = oldById.get(next.id)
+    if (!prev) {
+      diff.added.push(next)
+      continue
+    }
+    const changes: PackDiffFieldChange[] = []
+    for (const field of ['name', 'aliases', 'asset', 'avatar', 'assetKey', 'tags', 'enabled', 'deprecated', 'dataVersion'] as const) {
+      const before = (prev as unknown as Record<string, unknown>)[field]
+      const after = (next as unknown as Record<string, unknown>)[field]
+      if (!diffValueEqual(before, after)) changes.push({ field, before, after })
+    }
+    if (changes.length) diff.updated.push({ id: next.id, name: next.name, changedFields: changes })
+    else diff.unchanged.push(next)
+  }
+  for (const prev of oldItems) if (!newItems.some((item) => item.id === prev.id)) diff.removed.push(prev)
+  return diff
+}
+
+export function compareBattleDataPacks(oldPack: BattleResources, newPack: BattleResources): DataPackDiff {
+  const ninjas = compareDataPacks(oldPack.ninjas, newPack.ninjas)
+  return {
+    ...ninjas,
+    resources: {
+      ninjas,
+      secretScrolls: compareResourceLists(oldPack.secretScrolls, newPack.secretScrolls),
+      summons: compareResourceLists(oldPack.summons, newPack.summons),
+    },
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +507,30 @@ export function validateOnlineNinjaSnapshot(value: unknown, index: number): stri
   if (rec.assetKey !== undefined) {
     if (typeof rec.assetKey !== 'string') errors.push(`${label}.assetKey 必须是 string`)
     else if (rec.assetKey.length > 200) errors.push(`${label}.assetKey 过长（>200）`)
+  }
+  return errors
+}
+
+export function validateOnlineResourceSnapshot(
+  value: unknown,
+  index: number,
+  expectedType: 'SECRET_SCROLL' | 'SUMMON',
+): string[] {
+  const key = expectedType === 'SECRET_SCROLL' ? 'secretScrolls' : 'summons'
+  const errors = validatePackResource(value, index, key)
+  if (isRecord(value) && value.resourceType !== expectedType) {
+    errors.push(`${key}[${index}].resourceType 必须是 ${expectedType}`)
+  }
+  if (isRecord(value)) {
+    if (Array.isArray(value.tags)) {
+      if (value.tags.length > 20) errors.push(`${key}[${index}].tags 数量过多（>20）`)
+      if (value.tags.some((tag) => tag.length > 40)) errors.push(`${key}[${index}].tags 单项过长（>40）`)
+    }
+    for (const field of ['asset', 'avatar'] as const) {
+      if (typeof value[field] === 'string' && /^data:/i.test(value[field])) {
+        errors.push(`${key}[${index}].${field} 禁止 data: URL（Base64 图片禁止入库）`)
+      }
+    }
   }
   return errors
 }

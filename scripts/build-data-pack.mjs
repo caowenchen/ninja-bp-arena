@@ -23,6 +23,8 @@ const csvPath = join(root, 'data', 'source', 'ninjas.csv')
 const packDir = join(root, 'data', 'packs', 'default')
 const manifestPath = join(packDir, 'manifest.json')
 const ninjasPath = join(packDir, 'ninjas.json')
+const secretScrollsPath = join(packDir, 'secret-scrolls.json')
+const summonsPath = join(packDir, 'summons.json')
 
 if (!existsSync(csvPath)) {
   console.log('未找到 data/source/ninjas.csv —— 当前以内置 JSON 数据为准，无需构建。')
@@ -103,7 +105,11 @@ writeFileSync(ninjasPath, JSON.stringify(ninjas, null, 2) + '\n')
 // 同步 manifest（版本由维护者手工递增，这里只更新 count 与 checksum）
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
 manifest.ninjaCount = ninjas.length
-const canonical = JSON.stringify(JSON.parse(readFileSync(ninjasPath, 'utf8')))
+const canonical = JSON.stringify({
+  ninjas: JSON.parse(readFileSync(ninjasPath, 'utf8')),
+  secretScrolls: JSON.parse(readFileSync(secretScrollsPath, 'utf8')),
+  summons: JSON.parse(readFileSync(summonsPath, 'utf8')),
+})
 manifest.checksum = `sha256:${createHash('sha256').update(Buffer.from(canonical, 'utf8')).digest('hex')}`
 manifest.updatedAt = new Date().toISOString()
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')

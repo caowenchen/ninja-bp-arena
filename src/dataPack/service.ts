@@ -1,8 +1,9 @@
-import type { DataPackDiff, InstalledDataPack, Ninja, NinjaDataPackManifest } from '@bp-core'
+import type { DataPackDiff, InstalledDataPack, Ninja, NinjaDataPackManifest, SecretScroll, Summon } from '@bp-core'
 import {
-  compareDataPacks,
+  compareBattleDataPacks,
   computeJsonChecksum,
-  validateDataPack,
+  migrateDataPackV1ToV2,
+  validateBattleDataPack,
 } from '@bp-core'
 import type { DataPackBundle } from './types'
 import { DATA_PACK_CSV_HEADERS } from './types'
@@ -17,8 +18,14 @@ export interface ParseBundleResult {
   errors: string[]
   manifest?: NinjaDataPackManifest
   ninjas?: Ninja[]
-  /** ninjas.json 的规范化 checksum（导入 / 导出时写入 manifest） */
+  secretScrolls?: SecretScroll[]
+  summons?: Summon[]
+  /** Battle Data Pack 全部有效内容的规范化 checksum */
   checksum?: string
+}
+
+export function battlePackChecksumPayload(pack: Pick<InstalledDataPack, 'ninjas' | 'secretScrolls' | 'summons'>): string {
+  return JSON.stringify({ ninjas: pack.ninjas, secretScrolls: pack.secretScrolls, summons: pack.summons })
 }
 
 /**
@@ -40,34 +47,48 @@ export async function parseDataPackBundle(text: string): Promise<ParseBundleResu
     return fail(['数据包必须同时包含 manifest 与 ninjas 字段'])
   }
 
-  const allErrors = validateDataPack(rec.manifest, rec.ninjas)
+  const sourceManifest = rec.manifest as NinjaDataPackManifest
+  const sourceScrolls = rec.secretScrolls ?? []
+  const sourceSummons = rec.summons ?? []
+  const allErrors = validateBattleDataPack(rec.manifest, rec.ninjas, sourceScrolls, sourceSummons)
   if (allErrors.length > 0) return fail(allErrors)
 
-  const manifest = rec.manifest as NinjaDataPackManifest
   const ninjas = rec.ninjas as Ninja[]
-  const checksum = await computeJsonChecksum(JSON.stringify(ninjas))
-  if (manifest.checksum && manifest.checksum !== checksum) {
-    return fail(['manifest.checksum 与 ninjas 内容不匹配'])
+  const secretScrolls = sourceScrolls as SecretScroll[]
+  const summons = sourceSummons as Summon[]
+  const sourceChecksum = await computeJsonChecksum(
+    sourceManifest.schemaVersion === 1
+      ? JSON.stringify(ninjas)
+      : JSON.stringify({ ninjas, secretScrolls, summons }),
+  )
+  if (sourceManifest.checksum && sourceManifest.checksum !== sourceChecksum) {
+    return fail(['manifest.checksum 与 Battle Data Pack 内容不匹配'])
   }
+  const migrated = migrateDataPackV1ToV2({ manifest: sourceManifest, ninjas, secretScrolls, summons })
+  const checksum = await computeJsonChecksum(JSON.stringify({ ninjas, secretScrolls, summons }))
 
   return {
     ok: true,
     errors: [],
-    manifest: { ...manifest, checksum },
+    manifest: { ...migrated.manifest, checksum },
     ninjas,
+    secretScrolls,
+    summons,
     checksum,
   }
 }
 
 /** 校验通过后的 bundle → 安装记录 */
 export function bundleToInstalledPack(
-  parsed: { manifest: NinjaDataPackManifest; ninjas: Ninja[] },
+  parsed: { manifest: NinjaDataPackManifest; ninjas: Ninja[]; secretScrolls?: SecretScroll[]; summons?: Summon[] },
   origin: InstalledDataPack['origin'],
   remoteUrl?: string,
 ): InstalledDataPack {
   return {
     manifest: { ...parsed.manifest },
     ninjas: parsed.ninjas.map((n) => ({ ...n })),
+    secretScrolls: (parsed.secretScrolls ?? []).map((item) => ({ ...item })),
+    summons: (parsed.summons ?? []).map((item) => ({ ...item })),
     origin,
     ...(remoteUrl ? { remoteUrl } : {}),
     installedAt: new Date().toISOString(),
@@ -75,11 +96,13 @@ export function bundleToInstalledPack(
 }
 
 /** 导出数据包 Bundle 文本（manifest.checksum 保证与导出内容一致） */
-export async function exportDataPackBundle(pack: { manifest: NinjaDataPackManifest; ninjas: Ninja[] }): Promise<string> {
-  const checksum = await computeJsonChecksum(JSON.stringify(pack.ninjas))
+export async function exportDataPackBundle(pack: Pick<InstalledDataPack, 'manifest' | 'ninjas' | 'secretScrolls' | 'summons'>): Promise<string> {
+  const checksum = await computeJsonChecksum(battlePackChecksumPayload(pack))
   const bundle: DataPackBundle = {
-    manifest: { ...pack.manifest, checksum, ninjaCount: pack.ninjas.length },
+    manifest: { ...pack.manifest, schemaVersion: 2, checksum, ninjaCount: pack.ninjas.length, secretScrollCount: pack.secretScrolls.length, summonCount: pack.summons.length },
     ninjas: pack.ninjas,
+    secretScrolls: pack.secretScrolls,
+    summons: pack.summons,
   }
   return JSON.stringify(bundle, null, 2)
 }
@@ -88,8 +111,14 @@ export async function exportDataPackBundle(pack: { manifest: NinjaDataPackManife
 // Diff 快捷入口
 // ---------------------------------------------------------------------------
 
-export function diffPacks(oldPack: { ninjas: Ninja[] }, newPack: { ninjas: Ninja[] }): DataPackDiff {
-  return compareDataPacks(oldPack.ninjas, newPack.ninjas)
+export function diffPacks(
+  oldPack: { ninjas: Ninja[]; secretScrolls?: SecretScroll[]; summons?: Summon[] },
+  newPack: { ninjas: Ninja[]; secretScrolls?: SecretScroll[]; summons?: Summon[] },
+): DataPackDiff {
+  return compareBattleDataPacks(
+    { ninjas: oldPack.ninjas, secretScrolls: oldPack.secretScrolls ?? [], summons: oldPack.summons ?? [] },
+    { ninjas: newPack.ninjas, secretScrolls: newPack.secretScrolls ?? [], summons: newPack.summons ?? [] },
+  )
 }
 
 /** Diff 统计摘要（预览 UI 头部一行式） */

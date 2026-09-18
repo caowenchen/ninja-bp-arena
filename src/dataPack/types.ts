@@ -1,4 +1,4 @@
-import type { InstalledDataPack, NinjaDataPackManifest } from '@bp-core'
+import type { InstalledDataPack, NinjaDataPackManifest, SecretScroll, Summon } from '@bp-core'
 
 /**
  * 数据包体系的 Web 侧类型。
@@ -52,6 +52,8 @@ export interface DataPackUpdateState {
 export interface DataPackBundle {
   manifest: NinjaDataPackManifest
   ninjas: unknown[]
+  secretScrolls?: SecretScroll[]
+  summons?: Summon[]
 }
 
 /** CSV 导入 / 导出的列定义（aliases / tags 用 | 分隔） */

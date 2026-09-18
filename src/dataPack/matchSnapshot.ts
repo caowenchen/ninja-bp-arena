@@ -29,10 +29,26 @@ export function collectReferencedNinjaIds(match: MatchState): Set<string> {
  * 进行中的比赛绝不能压缩（ninjaSnapshot 必须完整）。
  */
 export function compactMatchForHistory(match: MatchState): MatchState {
-  if (!match.ninjaSnapshot) return match
+  if (!match.ninjaSnapshot && !match.resourceSnapshot) return match
   const referenced = collectReferencedNinjaIds(match)
-  const compacted: OnlineNinjaSnapshot[] = match.ninjaSnapshot.filter((n) => referenced.has(n.id))
-  return { ...match, ninjaSnapshot: compacted }
+  const byType = {
+    NINJA: new Set<string>(),
+    SECRET_SCROLL: new Set<string>(),
+    SUMMON: new Set<string>(),
+  }
+  for (const action of match.history) byType[action.resourceType ?? 'NINJA'].add(action.resourceId ?? action.ninjaId)
+  const compacted: OnlineNinjaSnapshot[] = (match.ninjaSnapshot ?? []).filter((n) => referenced.has(n.id))
+  return {
+    ...match,
+    ninjaSnapshot: compacted,
+    ...(match.resourceSnapshot ? {
+      resourceSnapshot: {
+        ninjas: match.resourceSnapshot.ninjas.filter((item) => byType.NINJA.has(item.id)),
+        secretScrolls: match.resourceSnapshot.secretScrolls.filter((item) => byType.SECRET_SCROLL.has(item.id)),
+        summons: match.resourceSnapshot.summons.filter((item) => byType.SUMMON.has(item.id)),
+      },
+    } : {}),
+  }
 }
 
 /** 比赛的忍者查找表（快照优先；用于名称/头像显示的 fallback 链） */

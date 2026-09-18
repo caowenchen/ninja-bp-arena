@@ -1,6 +1,6 @@
 {
   "manifest": {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "id": "replace-with-stable-pack-id",
     "name": "示例社区数据包",
     "version": "2026.09.1",
@@ -9,6 +9,8 @@
     "source": "请填写可验证的数据来源",
     "description": "玩家维护的非官方数据包",
     "ninjaCount": 1,
+    "secretScrollCount": 1,
+    "summonCount": 1,
     "assetBaseUrl": "https://example.com/ninja-assets/v1/"
   },
   "ninjas": [
@@ -27,5 +29,11 @@
       "dataVersion": "2026.09.1",
       "assetKey": "stable-ninja-001.webp"
     }
+  ],
+  "secretScrolls": [
+    { "id": "stable-scroll-001", "name": "示例秘卷", "tags": ["Demo"], "enabled": true }
+  ],
+  "summons": [
+    { "id": "stable-summon-001", "name": "示例通灵", "tags": ["Demo"], "enabled": true }
   ]
 }
