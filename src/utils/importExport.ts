@@ -156,7 +156,7 @@ export function buildBackup(raws: {
 }): BackupFile {
   return {
     app: 'ninja-bp-arena',
-    schemaVersion: 2,
+    schemaVersion: 3,
     exportedAt: new Date().toISOString(),
     ...raws,
   }

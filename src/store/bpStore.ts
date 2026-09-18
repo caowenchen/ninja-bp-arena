@@ -1,15 +1,18 @@
 import { create } from 'zustand'
-import type { Side } from '@/types/bp'
+import type { DraftResourceType, Side } from '@bp-core'
 import type { MatchState } from '@/types/match'
+import type { BattleRule } from '@/types/bp'
 import {
   createMatch,
   enterGame,
   nextGame,
   resetCurrentGame,
   selectNinja,
+  selectResource,
   setGameWinner,
   startMatch,
 } from '@/engine/bpEngine'
+import { getResource, snapshotResources } from '@bp-core'
 import { emptyStacks, recordSnapshot, redo, undo, type UndoStacks } from '@/engine/historyEngine'
 import { validateMatchState } from '@/engine/matchValidator'
 import { useNinjaStore } from './ninjaStore'
@@ -56,10 +59,11 @@ interface BPStore {
   recentMatches: MatchState[]
 
   /** 新建并开始比赛（首页「开始 BP」） */
-  startNewMatch: (bluePlayerName?: string, redPlayerName?: string) => MatchState
+  startNewMatch: (bluePlayerName?: string, redPlayerName?: string, ruleOverride?: BattleRule) => MatchState
   /** 继续历史中的未完成比赛 */
   continueMatch: (id: string) => MatchState | null
   selectNinja: (ninjaId: string) => OpResult
+  selectResource: (resourceType: DraftResourceType, resourceId: string) => OpResult
   undo: () => boolean
   redo: () => boolean
   canUndo: () => boolean
@@ -106,8 +110,8 @@ export const useBPStore = create<BPStore>()((set, get) => ({
   stacks: emptyStacks(),
   recentMatches: sanitizeMatchList(loadJSON<unknown>(STORAGE_KEYS.recentMatches, []), 'recent_matches'),
 
-  startNewMatch: (bluePlayerName, redPlayerName) => {
-    const rule = useSettingsStore.getState().activeRule()
+  startNewMatch: (bluePlayerName, redPlayerName, ruleOverride) => {
+    const rule = ruleOverride ?? useSettingsStore.getState().activeRule()
     // v0.4：创建比赛时固化忍者池快照与数据包元信息；
     // 之后数据包更新 / 忍者删除不影响进行中的比赛与历史显示
     const packSnapshot = buildMatchPackSnapshot()
@@ -115,6 +119,7 @@ export const useBPStore = create<BPStore>()((set, get) => ({
       ...startMatch(createMatch(rule, bluePlayerName, redPlayerName)),
       ...(packSnapshot.dataPack ? { dataPack: packSnapshot.dataPack } : {}),
       ninjaSnapshot: packSnapshot.ninjaSnapshot,
+      resourceSnapshot: packSnapshot.resourceSnapshot,
     }
     set({ match, stacks: emptyStacks() })
     persistMatch(match)
@@ -134,6 +139,19 @@ export const useBPStore = create<BPStore>()((set, get) => ({
     if (!match) return { ok: false, reason: '没有进行中的比赛' }
     const ninja = useNinjaStore.getState().getById(ninjaId)
     const result = selectNinja(match, ninjaId, ninja)
+    if (!result.ok || !result.state) return { ok: false, reason: result.reason }
+    commit(result.state)
+    const lastAction = result.state.history[result.state.history.length - 1]
+    playSound(lastAction?.action === 'BAN' ? 'ban' : 'select', useSettingsStore.getState().settings.soundEnabled)
+    return { ok: true }
+  },
+
+  selectResource: (resourceType, resourceId) => {
+    if (resourceType === 'NINJA') return get().selectNinja(resourceId)
+    const match = get().match
+    if (!match) return { ok: false, reason: '没有进行中的比赛' }
+    const resource = getResource(snapshotResources(match.resourceSnapshot), resourceType, resourceId)
+    const result = selectResource(match, resourceType, resourceId, resource)
     if (!result.ok || !result.state) return { ok: false, reason: result.reason }
     commit(result.state)
     const lastAction = result.state.history[result.state.history.length - 1]

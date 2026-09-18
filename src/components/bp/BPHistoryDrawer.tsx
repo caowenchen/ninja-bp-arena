@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { X } from 'lucide-react'
 import { useMatchSource } from '@/matchSource/context'
-import { useNinjaLookup } from '@/hooks/useNinjaLookup'
+import { useNinjaLookup, useResourceLookup } from '@/hooks/useNinjaLookup'
 import { groupHistoryByGame } from '@/engine/historyEngine'
 import { formatTime } from '@/utils/format'
 import { SIDE_TEXT } from '@/types/bp'
@@ -15,6 +15,7 @@ interface BPHistoryDrawerProps {
 export function BPHistoryDrawer({ open, onClose }: BPHistoryDrawerProps) {
   const match = useMatchSource().match
   const { nameOf } = useNinjaLookup(match)
+  const resourceNameOf = useResourceLookup(match)
   const groups = useMemo(() => (match ? groupHistoryByGame(match) : []), [match])
 
   if (!open) return null
@@ -60,7 +61,7 @@ export function BPHistoryDrawer({ open, onClose }: BPHistoryDrawerProps) {
                     >
                       {action.action}
                     </span>
-                    <span className="flex-1 truncate text-fog-100">{nameOf(action.ninjaId)}</span>
+                    <span className="flex-1 truncate text-fog-100">{action.resourceType && action.resourceType !== 'NINJA' ? resourceNameOf(action.resourceType, action.resourceId ?? action.ninjaId) : nameOf(action.ninjaId)}</span>
                     <span className="text-[10px] tabular-nums text-fog-600">{formatTime(action.timestamp)}</span>
                   </li>
                 ))}

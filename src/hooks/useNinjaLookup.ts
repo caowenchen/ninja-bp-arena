@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { MatchState, Ninja } from '@bp-core'
+import type { DraftResourceType, MatchState, Ninja } from '@bp-core'
 import { useNinjaStore } from '@/store/ninjaStore'
 import { buildSnapshotLookup } from '@/dataPack/matchSnapshot'
 
@@ -42,4 +42,16 @@ export function useNinjaLookup(match: MatchState | null | undefined): {
       avatarOf: (id) => getById(id)?.avatar,
     }
   }, [snapshot, storeGetById])
+}
+
+export function useResourceLookup(match: MatchState | null | undefined) {
+  const snapshot = match?.resourceSnapshot
+  return useMemo(() => {
+    const maps = {
+      NINJA: new Map((snapshot?.ninjas ?? []).map((item) => [item.id, item.name])),
+      SECRET_SCROLL: new Map((snapshot?.secretScrolls ?? []).map((item) => [item.id, item.name])),
+      SUMMON: new Map((snapshot?.summons ?? []).map((item) => [item.id, item.name])),
+    }
+    return (type: DraftResourceType, id: string) => maps[type].get(id) ?? (type === 'NINJA' ? `未知忍者 (${id})` : id)
+  }, [snapshot])
 }

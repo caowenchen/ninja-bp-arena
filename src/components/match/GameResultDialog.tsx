@@ -2,6 +2,7 @@ import type { MatchState } from '@/types/match'
 import { SIDE_TEXT } from '@/types/bp'
 import { useMatchSource } from '@/matchSource/context'
 import { Dialog } from '@/components/common/Dialog'
+import { useResourceLookup } from '@/hooks/useNinjaLookup'
 
 interface GameResultDialogProps {
   match: MatchState
@@ -14,6 +15,7 @@ export function GameResultDialog({ match, open, onClose }: GameResultDialogProps
   const game = match.games[match.games.length - 1]
   const winner = game.winner
   const source = useMatchSource()
+  const resourceNameOf = useResourceLookup(match)
 
   if (!winner) return null
 
@@ -31,6 +33,19 @@ export function GameResultDialog({ match, open, onClose }: GameResultDialogProps
         <p className="text-xs text-fog-500">
           已使用的忍者将在后续小局中保持禁用；首局 Ban 全场有效。
         </p>
+        {(game.blue.resources || game.red.resources) && (
+          <div className="w-full rounded border border-ink-600 bg-ink-900/50 p-3 text-xs text-fog-300">
+            {(['BLUE', 'RED'] as const).map((side) => {
+              const player = side === 'BLUE' ? game.blue : game.red
+              return (
+                <div key={side} className="mb-1 last:mb-0">
+                  <p>{side === 'BLUE' ? '蓝方' : '红方'}秘卷：{(player.resources?.SECRET_SCROLL?.picks ?? []).map((id) => resourceNameOf('SECRET_SCROLL', id)).join('、') || '无'}</p>
+                  <p>{side === 'BLUE' ? '蓝方' : '红方'}通灵：{(player.resources?.SUMMON?.picks ?? []).map((id) => resourceNameOf('SUMMON', id)).join('、') || '无'}</p>
+                </div>
+              )
+            })}
+          </div>
+        )}
         <div className="flex w-full flex-col gap-2 pt-2 sm:flex-row">
           <button
             type="button"

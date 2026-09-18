@@ -13,7 +13,7 @@ test('Data Pack 导入预览、应用与恢复内置包', async ({ page }) => {
   await chooser.setFiles(path.resolve(process.cwd(), 'examples/ninja-data-pack.json'))
 
   await expect(page.getByRole('heading', { name: '数据包更新预览' })).toBeVisible()
-  await expect(page.getByText('新增 2')).toBeVisible()
+  await expect(page.getByText('新增 2', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '应用更新' }).click()
 
   await expect(page).toHaveURL(/\/ninjas$/)

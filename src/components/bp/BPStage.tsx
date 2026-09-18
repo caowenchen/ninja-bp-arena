@@ -1,6 +1,7 @@
 import type { MatchState } from '@/types/match'
 import { getPhase } from '@/engine/bpEngine'
 import { CountdownTimer } from './CountdownTimer'
+import { getResourceDraftRules, RESOURCE_TYPE_LABEL } from '@bp-core'
 
 const SIDE_LABEL = { BLUE: '蓝方', RED: '红方' } as const
 
@@ -16,7 +17,7 @@ function SequenceStrip({ match }: { match: MatchState }) {
         return (
           <span
             key={index}
-            title={`${SIDE_LABEL[step.side]} ${isBan ? '禁用' : '选择'}`}
+            title={`${SIDE_LABEL[step.side]} ${isBan ? '禁用' : '选择'}${RESOURCE_TYPE_LABEL[step.resourceType]}`}
             className={`flex h-5 w-7 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${
               current
                 ? isBan
@@ -70,10 +71,13 @@ export function BPStage({
   const sideText = phase.side ? SIDE_LABEL[phase.side] : ''
   const actionEn = phase.action === 'BAN' ? 'BAN' : 'PICK'
   const actionCn = phase.action === 'BAN' ? '禁用阶段' : '选择阶段'
+  const resourceLabel = phase.resourceType ? RESOURCE_TYPE_LABEL[phase.resourceType] : '资源'
+  const isNinja = phase.resourceType === 'NINJA'
   const remainText =
     phase.remainingInStep > 1
-      ? `还需选择 ${phase.remainingInStep} 名忍者`
-      : '请选择 1 名忍者'
+      ? `还需选择 ${phase.remainingInStep} ${isNinja ? '名忍者' : `个${resourceLabel}`}`
+      : `请选择 1 ${isNinja ? '名忍者' : `个${resourceLabel}`}`
+  const timerSeconds = getResourceDraftRules(rule).find((item) => item.resourceType === phase.resourceType)?.timerSeconds ?? rule.timerSeconds
 
   return (
     <section
@@ -92,7 +96,7 @@ export function BPStage({
         <>
           <div className="flex items-center gap-3.5">
             <CountdownTimer
-              seconds={rule.timerSeconds}
+              seconds={timerSeconds}
               running={inBP}
               onExpire={onTimerExpire}
               deadlineOverride={deadlineOverride}
@@ -106,7 +110,7 @@ export function BPStage({
                 {phase.side === 'BLUE' ? 'BLUE' : 'RED'} {actionEn}
               </p>
               <p className="mt-0.5 text-sm font-medium text-fog-100">
-                {timeoutActive ? '操作超时 · 管理员可继续操作' : `${sideText}${actionCn} · ${remainText}`}
+                {timeoutActive ? '操作超时 · 管理员可继续操作' : `${sideText}${isNinja ? '' : resourceLabel}${actionCn} · ${remainText}`}
               </p>
             </div>
           </div>

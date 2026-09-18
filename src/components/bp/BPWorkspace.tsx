@@ -27,6 +27,8 @@ import { useBPStore } from '@/store/bpStore'
 import { playSound } from '@/utils/sound'
 import { normalizeForSearch } from '@/utils/format'
 import { CheckCircle2, Hourglass } from 'lucide-react'
+import { ResourceGrid } from '@/components/resource/ResourceGrid'
+import type { DraftResource, DraftResourceType } from '@bp-core'
 
 const QUALITY_ORDER = { S: 0, A: 1, B: 2, C: 3 } as const
 
@@ -86,6 +88,15 @@ export function BPWorkspace() {
 
   // 计时器：本地模式由客户端持久化 deadline；在线模式使用服务端权威 deadline
   const bpPhase = match ? getPhase(match) : null
+  const activeResourceType = bpPhase?.resourceType ?? 'NINJA'
+  const filteredResources = useMemo(() => {
+    if (activeResourceType === 'NINJA') return [] as DraftResource[]
+    const pool = source.matchResources?.[activeResourceType] ?? []
+    const query = normalizeForSearch(search)
+    return pool
+      .filter((item) => !query || [item.name, ...(item.aliases ?? []), ...(item.tags ?? [])].some((text) => normalizeForSearch(text).includes(query)))
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name, 'zh-Hans-CN'))
+  }, [activeResourceType, search, source.matchResources])
   const inBPNow = bpPhase ? bpPhase.status === 'BANNING' || bpPhase.status === 'PICKING' : false
   useEffect(() => {
     if (!match) return
@@ -133,6 +144,18 @@ export function BPWorkspace() {
         return
       }
       if (isOnline) toast(`已提交 ${name}，等待确认…`, 'info')
+      setTimeoutActive(false)
+    })
+  }
+
+  const handleResourcePick = (resourceType: DraftResourceType, resourceId: string, name: string) => {
+    if (isOnline && !source.isMyTurn) {
+      toast('等待对方选择……', 'info')
+      return
+    }
+    void Promise.resolve(source.selectResource(resourceType, resourceId)).then((result) => {
+      if (!result.ok && result.reason) toast(result.reason, 'error')
+      else if (isOnline) toast(`已提交 ${name}，等待确认…`, 'info')
       setTimeoutActive(false)
     })
   }
@@ -199,7 +222,8 @@ export function BPWorkspace() {
               <section className="space-y-2">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <NinjaSearch value={search} onChange={setSearch} />
-                  <NinjaFilter value={quality} onChange={setQuality} />
+                  {phase.resourceType === 'NINJA' && <NinjaFilter value={quality} onChange={setQuality} />}
+                  {phase.resourceType === 'NINJA' && (
                   <div className="flex items-center gap-1 rounded-lg border border-ink-500 bg-ink-800 p-1" role="group" aria-label="状态筛选">
                     {(
                       [
@@ -223,6 +247,8 @@ export function BPWorkspace() {
                       </button>
                     ))}
                   </div>
+                  )}
+                  {phase.resourceType === 'NINJA' && (
                   <select
                     value={settings.ninjaSort}
                     onChange={(e) => useSettingsStore.getState().update({ ninjaSort: e.target.value as 'quality' | 'name' })}
@@ -232,14 +258,23 @@ export function BPWorkspace() {
                     <option value="quality">品质排序</option>
                     <option value="name">名称排序</option>
                   </select>
+                  )}
                 </div>
                 <div className={waitingOther ? 'opacity-70' : ''}>
-                  <NinjaGrid
-                    ninjas={filteredNinjas}
-                    match={match}
-                    statusFilter={statusFilter}
-                    onPick={(ninja) => handlePick(ninja.id, ninja.name)}
-                  />
+                  {phase.resourceType === 'NINJA' ? (
+                    <NinjaGrid
+                      ninjas={filteredNinjas}
+                      match={match}
+                      statusFilter={statusFilter}
+                      onPick={(ninja) => handlePick(ninja.id, ninja.name)}
+                    />
+                  ) : (
+                    <ResourceGrid
+                      resources={filteredResources}
+                      resourceType={phase.resourceType ?? 'SECRET_SCROLL'}
+                      onSelect={(resource) => handleResourcePick(phase.resourceType ?? 'SECRET_SCROLL', resource.id, resource.name)}
+                    />
+                  )}
                 </div>
               </section>
             )}

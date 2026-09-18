@@ -28,7 +28,7 @@ export function PlayerPanel({ side }: PlayerPanelProps) {
     const phase = getPhase(match)
     const game = match.games[match.games.length - 1]
     const player = side === 'BLUE' ? game.blue : game.red
-    const steps = phase.expanded.filter((e) => e.side === side)
+    const steps = phase.expanded.filter((e) => e.side === side && e.resourceType === 'NINJA')
     return {
       bans: steps.filter((e) => e.action === 'BAN').map((_, i) => player.bans[i]),
       picks: steps.filter((e) => e.action === 'PICK').map((_, i) => player.picks[i]),
@@ -42,6 +42,9 @@ export function PlayerPanel({ side }: PlayerPanelProps) {
   const isBlue = side === 'BLUE'
   const playerName = isBlue ? match.bluePlayerName : match.redPlayerName
   const teamColor = isBlue ? 'text-blue-team-soft' : 'text-red-team-soft'
+  const game = match.games[match.games.length - 1]
+  const player = side === 'BLUE' ? game.blue : game.red
+  const phase = getPhase(match)
 
   return (
     <aside
@@ -86,6 +89,27 @@ export function PlayerPanel({ side }: PlayerPanelProps) {
           ))}
         </div>
       </section>
+
+      {(['SECRET_SCROLL', 'SUMMON'] as const).map((resourceType) => {
+        const slots = phase.expanded.filter((step) => step.side === side && step.resourceType === resourceType && step.action === 'PICK').length
+        if (!slots) return null
+        const ids = player.resources?.[resourceType]?.picks ?? []
+        const lookup = new Map((source.matchResources?.[resourceType] ?? []).map((item) => [item.id, item.name]))
+        return (
+          <section key={resourceType}>
+            <h4 className="mb-1.5 text-[9px] font-bold tracking-[0.25em] text-fog-600">
+              {resourceType === 'SECRET_SCROLL' ? 'SECRET SCROLL · 秘卷' : 'SUMMON · 通灵'}
+            </h4>
+            <div className="grid grid-cols-3 gap-2">
+              {Array.from({ length: slots }, (_, index) => (
+                <div key={index} className="flex min-h-12 items-center justify-center rounded border border-ink-500 bg-ink-800 px-2 text-center text-xs text-fog-300">
+                  {ids[index] ? (lookup.get(ids[index]) ?? ids[index]) : `${index + 1}`}
+                </div>
+              ))}
+            </div>
+          </section>
+        )
+      })}
     </aside>
   )
 }

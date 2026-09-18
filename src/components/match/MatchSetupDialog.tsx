@@ -4,11 +4,14 @@ import { AlertTriangle } from 'lucide-react'
 import { Dialog } from '@/components/common/Dialog'
 import { useBPStore } from '@/store/bpStore'
 import { useSettingsStore } from '@/store/settingsStore'
-import { DEFAULT_RULE, cloneRule } from '@/data/defaultRules'
+import { DEFAULT_RULE, FULL_LOADOUT_DEMO_RULE, cloneRule } from '@/data/defaultRules'
 import { describeSequence } from '@/engine/ruleEngine'
-import { getMinimumRequiredPoolSize } from '@bp-core'
+import { countEnabledResources, getMinimumRequiredResources } from '@bp-core'
 import { useNinjaStore } from '@/store/ninjaStore'
 import type { MatchState } from '@/types/match'
+import { useDataPackStore } from '@/dataPack/store'
+import { builtInPack } from '@/dataPack/loader'
+import { BUILT_IN_PACK_ID } from '@/dataPack/types'
 
 interface MatchSetupDialogProps {
   open: boolean
@@ -24,17 +27,27 @@ export function MatchSetupDialog({ open, onClose, unfinished }: MatchSetupDialog
   // 注意：selector 不能直接调用 activeRule()（每次返回新对象会触发无限重渲染），
   // 这里选引用再 useMemo 克隆。
   const customRule = useSettingsStore((s) => s.customRule)
-  const rule = useMemo(() => cloneRule(customRule ?? DEFAULT_RULE), [customRule])
+  const currentRule = useMemo(() => cloneRule(customRule ?? DEFAULT_RULE), [customRule])
+  const [template, setTemplate] = useState<'CURRENT' | 'FULL_LOADOUT'>('CURRENT')
+  const rule = template === 'FULL_LOADOUT' ? cloneRule(FULL_LOADOUT_DEMO_RULE) : currentRule
   const [blueName, setBlueName] = useState('')
   const [redName, setRedName] = useState('')
   // 注意：selector 不能每次返回新对象（会触发无限重渲染），这里选 ninjas 数组后计算
   const ninjas = useNinjaStore((s) => s.ninjas)
-  const enabledCount = new Set(ninjas.filter((n) => n.enabled).map((n) => n.id)).size
-  const requiredPool = getMinimumRequiredPoolSize(rule)
-  const poolInsufficient = enabledCount < requiredPool
+  const activePackId = useDataPackStore((s) => s.activePackId)
+  const installedPacks = useDataPackStore((s) => s.installedPacks)
+  const activePack = activePackId === BUILT_IN_PACK_ID ? builtInPack() : installedPacks.find((pack) => pack.manifest.id === activePackId) ?? null
+  const available = {
+    ninjas: countEnabledResources(ninjas),
+    secretScrolls: countEnabledResources(activePack?.secretScrolls ?? []),
+    summons: countEnabledResources(activePack?.summons ?? []),
+  }
+  const requiredPool = getMinimumRequiredResources(rule)
+  const insufficient = (['ninjas', 'secretScrolls', 'summons'] as const).filter((key) => available[key] < requiredPool[key])
+  const poolInsufficient = insufficient.length > 0
 
   const handleStart = () => {
-    startNewMatch(blueName, redName)
+    startNewMatch(blueName, redName, rule)
     onClose()
     navigate('/bp')
   }
@@ -97,6 +110,15 @@ export function MatchSetupDialog({ open, onClose, unfinished }: MatchSetupDialog
           </label>
         </div>
 
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-fog-300">规则模板</span>
+          <select value={template} onChange={(event) => setTemplate(event.target.value as 'CURRENT' | 'FULL_LOADOUT')} className="rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-fog-100">
+            <option value="CURRENT">Ninja Only（当前规则）</option>
+            <option value="FULL_LOADOUT">Full Loadout Demo（示例）</option>
+          </select>
+          <span className="text-[10px] text-fog-600">模板均为玩家工具配置，不代表官方赛事规则。</span>
+        </label>
+
         <div className="rounded-lg border border-ink-600 bg-ink-900/60 p-3 text-xs">
           <p className="mb-1 font-semibold text-fog-300">规则模板：{rule.name}</p>
           <p className="text-fog-500">Ban（第 1 局）：{describeSequence(rule.banSequence)}</p>
@@ -107,8 +129,8 @@ export function MatchSetupDialog({ open, onClose, unfinished }: MatchSetupDialog
           </p>
           {poolInsufficient && (
             <p className="mt-1.5 rounded border border-side-red/40 bg-side-red/10 p-2 text-[11px] text-side-red-soft">
-              当前忍者池只有 {enabledCount} 名可用忍者，该规则完成整场比赛至少需要 {requiredPool} 名。
-              请先在「忍者池管理」补充或启用忍者。
+              资源不足：{insufficient.map((key) => `${key} ${available[key]}/${requiredPool[key]}`).join('，')}。
+              请切换完整 Battle Data Pack 或启用足够资源。
             </p>
           )}
         </div>

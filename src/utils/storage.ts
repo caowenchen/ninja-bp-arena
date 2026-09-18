@@ -10,7 +10,7 @@
 export const STORAGE_PREFIX = 'ninja-bp.'
 
 /** 当前存储 schema 版本。修改数据结构时递增并补充 migrator。 */
-export const STORAGE_SCHEMA_VERSION = 3
+export const STORAGE_SCHEMA_VERSION = 4
 
 export const STORAGE_KEYS = {
   ninjaPool: 'ninja_pool',
@@ -52,7 +52,7 @@ function getLocalStorage(): Storage | null {
 export type Migrator = (legacyData: unknown, fromVersion: number) => unknown
 
 /**
- * v2 → v3 数据包体系迁移。
+ * v1/v2/v3 → v4 Battle Data Pack 迁移入口。
  *
  * v0.3.x 的忍者池（ninja_pool）在 v3 中继续作为「当前生效池」的镜像使用；
  * 结构本身不变，因此数据原样通过。来源分类（内置 / 数据包 / 自定义）由

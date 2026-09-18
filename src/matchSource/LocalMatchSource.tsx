@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Side } from '@bp-core'
+import { getResourceDraftRules, snapshotResources } from '@bp-core'
 import { useBPStore } from '@/store/bpStore'
 import { useNinjaStore } from '@/store/ninjaStore'
 import { useTimerStore } from '@/store/timerStore'
@@ -20,12 +21,15 @@ export function LocalMatchSource({ children }: { children: ReactNode }) {
   const matchNinjas = match?.ninjaSnapshot
     ? match.ninjaSnapshot.map((n) => ({ ...n, tags: [] }))
     : ninjas
+  const snapshot = snapshotResources(match?.resourceSnapshot)
 
   const source: MatchSource = {
     mode: 'local',
     match,
     matchNinjas,
     selectNinja: (ninjaId) => useBPStore.getState().selectNinja(ninjaId),
+    selectResource: (resourceType, resourceId) => useBPStore.getState().selectResource(resourceType, resourceId),
+    matchResources: { NINJA: matchNinjas, SECRET_SCROLL: snapshot.secretScrolls, SUMMON: snapshot.summons },
     undo: () => ({ ok: useBPStore.getState().undo() }),
     redo: () => ({ ok: useBPStore.getState().redo() }),
     canUndo,
@@ -49,10 +53,11 @@ export function LocalMatchSource({ children }: { children: ReactNode }) {
 /** 本地计时器同步：phaseKey 变化才重建 deadline（供 BPWorkspace 使用） */
 export function syncLocalTimer(match: NonNullable<MatchSource['match']>, inBP: boolean) {
   const phase = getPhase(match)
-  const phaseKey = `${match.id}:G${phase.gameNumber}:${phase.sequenceComplete ? 'DONE' : `S${phase.stepIndex ?? 0}`}`
+  const phaseKey = `${match.id}:G${phase.gameNumber}:${phase.sequenceComplete ? 'DONE' : `${phase.resourceType}:S${phase.stepIndex ?? 0}`}`
+  const seconds = getResourceDraftRules(match.rule).find((item) => item.resourceType === phase.resourceType)?.timerSeconds ?? match.rule.timerSeconds
   useTimerStore.getState().sync({
     phaseKey,
-    seconds: match.rule.timerSeconds,
+    seconds,
     enabled: match.rule.timerEnabled && inBP,
   })
 }
