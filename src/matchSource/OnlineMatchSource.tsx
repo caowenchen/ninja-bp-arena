@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react'
-import { computeTimerPhaseKey, getPhase, toOnlineNinjaSnapshots } from '@bp-core'
+import { computeTimerPhaseKey, getPhase, snapshotResources, toOnlineNinjaSnapshots } from '@bp-core'
 import { useOnlineRoomStore } from '@/online/onlineRoomStore'
 import { MatchSourceProvider, type MatchSource } from './context'
 
@@ -19,6 +19,7 @@ export function OnlineMatchSource({ children }: { children: ReactNode }) {
   const onlineNinjaIds = useOnlineRoomStore((s) => s.onlineNinjaIds)
   const roomNinjas = useOnlineRoomStore((s) => s.roomNinjas)
   const roomPackMetadata = useOnlineRoomStore((s) => s.roomPackMetadata)
+  const roomResources = useOnlineRoomStore((s) => s.roomResources)
 
   // v0.4：房间 Ninja Snapshot 是显示权威（服务端按它校验，双方必然一致）；
   // 旧房间（只有 {id,enabled}）回退本地池按 id 过滤
@@ -31,8 +32,10 @@ export function OnlineMatchSource({ children }: { children: ReactNode }) {
       ...authoritativeMatch,
       ...(roomPackMetadata ? { dataPack: roomPackMetadata } : {}),
       ...(roomNinjas ? { ninjaSnapshot: toOnlineNinjaSnapshots(roomNinjas) } : {}),
+      ...(roomResources ? { resourceSnapshot: roomResources } : {}),
     }
-  }, [authoritativeMatch, roomNinjas, roomPackMetadata])
+  }, [authoritativeMatch, roomNinjas, roomPackMetadata, roomResources])
+  const resources = snapshotResources(roomResources ?? match?.resourceSnapshot)
 
   const phase = match ? getPhase(match) : null
   const isMyTurn = Boolean(
@@ -51,6 +54,7 @@ export function OnlineMatchSource({ children }: { children: ReactNode }) {
     mode: 'online',
     match,
     selectNinja: (ninjaId) => useOnlineRoomStore.getState().sendCommand('SELECT_NINJA', { ninjaId }),
+    selectResource: (resourceType, resourceId) => useOnlineRoomStore.getState().sendCommand('SELECT_RESOURCE', { resourceType, resourceId }),
     undo: () => useOnlineRoomStore.getState().sendCommand('REQUEST_UNDO'),
     redo: () => ({ ok: false, reason: '在线模式暂不支持重做' }),
     canUndo: Boolean(match && match.history.length > 0 && roomStatus === 'ACTIVE'),
@@ -71,6 +75,7 @@ export function OnlineMatchSource({ children }: { children: ReactNode }) {
     myUserId: userId,
     onlineNinjaIds,
     matchNinjas,
+    matchResources: { NINJA: matchNinjas ?? resources.ninjas, SECRET_SCROLL: resources.secretScrolls, SUMMON: resources.summons },
     resync: () => useOnlineRoomStore.getState().refreshSnapshot(),
   }
 

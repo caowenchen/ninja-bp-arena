@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { BattleRule, MatchState, Ninja, OnlineCommandType, OnlineNinjaSnapshot, PendingUndo, RoomStatus, Seat } from '@bp-core'
-import { toOnlineNinjaSnapshots } from '@bp-core'
+import type { BattleResourceSnapshot, BattleRule, DraftResourceType, MatchState, Ninja, OnlineCommandType, OnlineNinjaSnapshot, PendingUndo, RoomStatus, Seat } from '@bp-core'
+import { toBattleResourceSnapshot, toOnlineNinjaSnapshots } from '@bp-core'
 import { supabase, isOnlineConfigured } from '@/lib/supabase'
 import { getPhase } from '@bp-core'
 import { roomApi } from './roomClient'
@@ -44,12 +44,13 @@ interface OnlineRoomState {
   roomNinjas: Ninja[] | null
   /** v0.4：房间的数据包元信息（等待页展示 + 加入一致性提示） */
   roomPackMetadata: MatchPackMetadata | null
+  roomResources: BattleResourceSnapshot | null
 
   ensureAuth: () => Promise<boolean>
   createRoom: (input: { displayName: string; seat: 'BLUE' | 'RED'; rule: MatchState['rule'] }) => Promise<{ ok: boolean; code?: string; error?: string }>
   joinRoom: (input: { code: string; seat: 'AUTO' | 'BLUE' | 'RED' | 'OBSERVER'; displayName: string }) => Promise<{ ok: boolean; seat?: Seat; error?: string }>
   enterRoom: (roomId: string, code: string) => Promise<{ ok: boolean; error?: string }>
-  sendCommand: (type: OnlineCommandType, payload?: { ninjaId?: string; side?: string }) => Promise<{ ok: boolean; reason?: string }>
+  sendCommand: (type: OnlineCommandType, payload?: { ninjaId?: string; resourceId?: string; resourceType?: DraftResourceType; side?: string }) => Promise<{ ok: boolean; reason?: string }>
   /** 强制重新拉取权威快照（怀疑本地状态滞后时使用） */
   resync: () => Promise<void>
   /** 基于最新权威状态判断当前是否轮到本客户端 */
@@ -109,6 +110,7 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
   onlineNinjaIds: null,
   roomNinjas: null,
   roomPackMetadata: null,
+  roomResources: null,
 
   // ---- 匿名认证：首次进入在线模式自动 signInAnonymously ----
   ensureAuth: async () => {
@@ -141,6 +143,11 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
         ninjaStore.ninjas,
         pack?.manifest.assetBaseUrl,
       )
+      const resourceSnapshot = toBattleResourceSnapshot({
+        ninjas: ninjaStore.ninjas,
+        secretScrolls: pack?.secretScrolls ?? [],
+        summons: pack?.summons ?? [],
+      }, pack?.manifest.assetBaseUrl)
       const packMetadata = pack
         ? {
             packId: pack.manifest.id,
@@ -149,16 +156,16 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
             checksum: pack.manifest.checksum,
           }
         : undefined
-      const identity = await roomApi.createRoom({ displayName, seat, rule: rule as BattleRule, pool, ninjas, packMetadata })
+      const identity = await roomApi.createRoom({ displayName, seat, rule: rule as BattleRule, pool, ninjas, resourceSnapshot, packMetadata })
       const entered = await get().enterRoom(identity.roomId, identity.code)
       return entered.ok ? { ok: true, code: identity.code } : { ok: false, error: entered.error }
     } catch (err) {
       const code = (err as { code?: string }).code
-      const extra = (err as { payload?: { required?: number; available?: number } }).payload
-      if (code === 'INSUFFICIENT_NINJA_POOL' && extra) {
+      const extra = (err as { payload?: { resourceType?: string; required?: number; available?: number } }).payload
+      if ((code === 'INSUFFICIENT_RESOURCE_POOL' || code === 'INSUFFICIENT_NINJA_POOL') && extra) {
         return {
           ok: false,
-          error: `当前忍者池只有 ${extra.available} 名可用忍者，该规则完成整场比赛至少需要 ${extra.required} 名。请先补充忍者池。`,
+          error: `${extra.resourceType ?? 'ninjas'} 当前只有 ${extra.available} 个可用资源，该规则至少需要 ${extra.required} 个。请先补充资源池。`,
         }
       }
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -204,6 +211,7 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
         onlineNinjaIds: Array.isArray(snap.room.pool) ? snap.room.pool.map((n) => (n as { id?: unknown }).id as string) : null,
         roomNinjas: parsed.valid && parsed.ninjas.length > 0 ? parsed.ninjas : null,
         roomPackMetadata: (snap.room.data_pack_metadata as MatchPackMetadata | null) ?? null,
+        roomResources: snap.room.resource_snapshot ?? null,
       })
 
       // 订阅：postgres_changes 通知 → 重新拉取权威快照；presence 只做在线展示
@@ -291,6 +299,7 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
         onlineNinjaIds: Array.isArray(snap.room.pool) ? snap.room.pool.map((n) => (n as { id?: unknown }).id as string) : null,
         roomNinjas: parsed.valid && parsed.ninjas.length > 0 ? parsed.ninjas : null,
         roomPackMetadata: (snap.room.data_pack_metadata as MatchPackMetadata | null) ?? null,
+        roomResources: snap.room.resource_snapshot ?? null,
         connection: get().connection === 'syncing' ? 'connected' : get().connection,
       })
     } catch {
@@ -376,6 +385,7 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
       onlineNinjaIds: null,
       roomNinjas: null,
       roomPackMetadata: null,
+      roomResources: null,
     })
   },
 

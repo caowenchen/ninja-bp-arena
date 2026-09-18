@@ -8,6 +8,9 @@ import {
   type RoomStatus,
   type Seat,
   type SeatMember,
+  snapshotResources,
+  type BattleResourceSnapshot,
+  type DraftResourceType,
 } from '../_shared/bp-core/index.ts'
 
 /**
@@ -41,6 +44,7 @@ interface RoomRow {
   pending_action: unknown
   expires_at: string
   pool: { id: string; enabled: boolean }[]
+  resource_snapshot: BattleResourceSnapshot | null
   host_user_id: string
 }
 
@@ -56,7 +60,7 @@ interface AuditRow {
 async function loadRoom(admin: ReturnType<typeof serviceClient>, roomId: string): Promise<RoomRow | null> {
   const { data, error } = await admin
     .from('rooms')
-    .select('id, code, status, match_state, revision, pending_action, expires_at, pool, host_user_id')
+    .select('id, code, status, match_state, revision, pending_action, expires_at, pool, resource_snapshot, host_user_id')
     .eq('id', roomId)
     .maybeSingle()
   if (error) throw new Error(error.message)
@@ -88,7 +92,7 @@ Deno.serve(async (req) => {
       commandId?: unknown
       expectedRevision?: unknown
       type?: unknown
-      payload?: { ninjaId?: unknown; side?: unknown }
+      payload?: { ninjaId?: unknown; resourceId?: unknown; resourceType?: unknown; side?: unknown }
     }
 
     const roomId = typeof body.roomId === 'string' ? body.roomId : ''
@@ -186,6 +190,7 @@ Deno.serve(async (req) => {
         seatMembers,
         pendingUndo: (room.pending_action as PendingUndo | null) ?? null,
         ninjas: Array.isArray(room.pool) ? room.pool : [],
+        ...(room.resource_snapshot ? { resources: snapshotResources(room.resource_snapshot) } : {}),
         now: Date.now(),
       },
       {
@@ -195,6 +200,10 @@ Deno.serve(async (req) => {
         type,
         payload: {
           ninjaId: typeof body.payload?.ninjaId === 'string' ? body.payload.ninjaId : undefined,
+          resourceId: typeof body.payload?.resourceId === 'string' ? body.payload.resourceId : undefined,
+          resourceType: ['NINJA', 'SECRET_SCROLL', 'SUMMON'].includes(String(body.payload?.resourceType))
+            ? body.payload?.resourceType as DraftResourceType
+            : undefined,
           // side 由服务端按阶段推导；此处仅透传（handler 不信任它）
           side:
             body.payload?.side === 'BLUE' || body.payload?.side === 'RED'

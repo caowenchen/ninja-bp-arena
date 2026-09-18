@@ -2,7 +2,7 @@
  * Edge Functions 冒烟测试（真实 HTTP 调用，针对 Supabase Local）。
  *
  * 覆盖：
- * 1. room-create（匿名登录 → v0.4 Ninja Snapshot + Pack Metadata 原子创建）
+ * 1. room-create（匿名登录 → v0.5 Battle Resource Snapshot + Pack Metadata 原子创建）
  * 2. room-join（第二玩家加入 + 重复加入幂等）
  * 3. room-command START_MATCH（Host 权限 + 服务端填充玩家名 + revision +1）
  * 4. 非成员直接读房间 → RLS 空结果
@@ -57,9 +57,14 @@ const NINJAS = POOL.map((n, i) => ({
 }))
 const PACK_METADATA = {
   packId: 'smoke-pack',
-  schemaVersion: 1,
+  schemaVersion: 2,
   packVersion: '2026.09.1',
   checksum: `sha256:${'a'.repeat(64)}`,
+}
+const RESOURCE_SNAPSHOT = {
+  ninjas: NINJAS,
+  secretScrolls: [{ resourceType: 'SECRET_SCROLL', id: 'smoke-scroll-01', name: '冒烟秘卷', enabled: true, tags: ['Demo'] }],
+  summons: [{ resourceType: 'SUMMON', id: 'smoke-summon-01', name: '冒烟通灵', enabled: true, tags: ['Demo'] }],
 }
 
 async function newUser() {
@@ -96,21 +101,23 @@ const created = await invoke(host.token, 'room-create', {
   seat: 'BLUE',
   rule: rule(),
   ninjas: NINJAS,
+  resourceSnapshot: RESOURCE_SNAPSHOT,
   packMetadata: PACK_METADATA,
 })
 assert(created.status === 200, `room-create 返回 200（code=${created.json.code ?? created.json.message}）`)
 assert(/^[A-HJ-KM-NP-Z2-9]{6}$/.test(created.json.code), '房间码为 6 位无混淆字符')
-assert(created.json.packMetadata?.schemaVersion === 1, 'room-create 返回数据包 schema 元信息')
+assert(created.json.packMetadata?.schemaVersion === 2, 'room-create 返回数据包 schema 元信息')
 const roomId = created.json.roomId
 const code = created.json.code
 
 const roomSnapshot = await host.client
   .from('rooms')
-  .select('pool, data_pack_metadata')
+  .select('pool, resource_snapshot, data_pack_metadata')
   .eq('id', roomId)
   .single()
 assert(roomSnapshot.error === null, '房主可读取新建房间快照')
 assert(roomSnapshot.data.pool[0].name === '冒烟忍者01', '房间 pool 固化轻量忍者显示快照')
+assert(roomSnapshot.data.resource_snapshot.secretScrolls[0].id === 'smoke-scroll-01', '房间固化完整 Battle Resource Snapshot')
 assert(roomSnapshot.data.data_pack_metadata.packId === 'smoke-pack', '房间原子写入 Data Pack Metadata')
 
 // 非成员读取 → RLS 空结果

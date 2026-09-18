@@ -190,19 +190,19 @@ begin
   raise notice 'CHECK-PASS: CAS RPC 仅 service_role 可执行';
 end $t9$;
 
--- 10 create_room_transaction RPC：仅 service_role（0003 起为 6 参，第 6 参默认 null）
+-- 10 create_room_transaction RPC：仅 service_role（v0.5 为 7 参，末两参默认 null）
 do $t10$
 begin
   if has_function_privilege(
        'authenticated',
-       'public.create_room_transaction(uuid,text,text,jsonb,jsonb,jsonb)',
+       'public.create_room_transaction(uuid,text,text,jsonb,jsonb,jsonb,jsonb)',
        'EXECUTE'
      ) then
     raise exception 'authenticated 仍可执行创建房间 RPC';
   end if;
   if not has_function_privilege(
        'service_role',
-       'public.create_room_transaction(uuid,text,text,jsonb,jsonb,jsonb)',
+       'public.create_room_transaction(uuid,text,text,jsonb,jsonb,jsonb,jsonb)',
        'EXECUTE'
      ) then
     raise exception 'service_role 不能执行创建房间 RPC';
@@ -294,6 +294,30 @@ begin
 
   delete from public.rooms where id = v_room;
 end $t13$;
+
+-- 14 v0.5.0 完整资源快照：列存在、RPC 原子写入、结构约束生效
+do $t14$
+declare
+  v_room uuid;
+  v_snapshot jsonb := '{"ninjas":[{"id":"n1","name":"N1","enabled":true,"quality":"A"}],"secretScrolls":[{"resourceType":"SECRET_SCROLL","id":"s1","name":"S1","enabled":true}],"summons":[{"resourceType":"SUMMON","id":"m1","name":"M1","enabled":true}]}'::jsonb;
+begin
+  perform set_config('role', 'service_role', true);
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'rooms' and column_name = 'resource_snapshot'
+  ) then
+    raise exception 'rooms 缺少 resource_snapshot 列（0004 迁移未应用？）';
+  end if;
+  select room_id into v_room from public.create_room_transaction(
+    gen_random_uuid(), 'BLUE', '资源快照房主', '{"demo":"v5"}'::jsonb,
+    '[{"id":"n1","enabled":true}]'::jsonb, null, v_snapshot
+  );
+  if (select resource_snapshot from public.rooms where id = v_room) <> v_snapshot then
+    raise exception 'create_room_transaction 未写入 resource_snapshot';
+  end if;
+  raise notice 'CHECK-PASS: rooms.resource_snapshot 由创建 RPC 事务写入';
+  delete from public.rooms where id = v_room;
+end $t14$;
 
 do $done$
 begin

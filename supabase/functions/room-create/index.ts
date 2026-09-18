@@ -1,13 +1,16 @@
 import { json, handleOptions } from '../_shared/http.ts'
 import { serviceClient, getUserFromRequest } from '../_shared/supabase.ts'
 import {
-  countEnabledNinjas,
+  countEnabledResources,
   createMatch,
-  getMinimumRequiredPoolSize,
+  getMinimumRequiredResources,
+  validateOnlineResourceSnapshot,
   validateOnlineNinjaSnapshot,
   validateStoredRule,
   type BattleRule,
   type OnlineNinjaSnapshot,
+  type OnlineResourceSnapshot,
+  type BattleResourceSnapshot,
 } from '../_shared/bp-core/index.ts'
 
 /**
@@ -22,8 +25,9 @@ import {
  *
  * body: { displayName, seat: 'BLUE'|'RED', rule: BattleRule, pool?: {id,enabled}[], ninjas?: OnlineNinjaSnapshot[], packMetadata?: {...} }
  */
-const MAX_BODY_BYTES = 1024 * 1024 // v0.4：快照模式按 500 忍者放宽到 1MB
+const MAX_BODY_BYTES = 768 * 1024
 const MAX_SNAPSHOT_NINJAS = 500
+const MAX_SNAPSHOT_AUXILIARY = 100
 // 创建房间限速：每 auth user 60 秒最多 5 个房间 / 24 小时最多 20 个
 const CREATE_RATE_WINDOW_MS = 60_000
 const CREATE_RATE_MAX = 5
@@ -48,6 +52,7 @@ Deno.serve(async (req) => {
       rule?: unknown
       pool?: unknown
       ninjas?: unknown
+      resourceSnapshot?: unknown
       packMetadata?: unknown
     }
 
@@ -95,6 +100,58 @@ Deno.serve(async (req) => {
       ninjas = list
     }
 
+    let resourceSnapshot: BattleResourceSnapshot | null = null
+    if (body.resourceSnapshot !== undefined) {
+      const snapshot = body.resourceSnapshot as Partial<BattleResourceSnapshot>
+      if (!snapshot || !Array.isArray(snapshot.ninjas) || !Array.isArray(snapshot.secretScrolls) || !Array.isArray(snapshot.summons)) {
+        return json({ error: 'INVALID_RESOURCE_SNAPSHOT', message: 'resourceSnapshot 结构不合法' }, 400)
+      }
+      if (snapshot.ninjas.length > MAX_SNAPSHOT_NINJAS || snapshot.secretScrolls.length > MAX_SNAPSHOT_AUXILIARY || snapshot.summons.length > MAX_SNAPSHOT_AUXILIARY) {
+        return json({ error: 'TOO_MANY_RESOURCES', message: '资源快照数量超出限制' }, 400)
+      }
+      const seen = new Set<string>()
+      for (let i = 0; i < snapshot.ninjas.length; i += 1) {
+        const errors = validateOnlineNinjaSnapshot(snapshot.ninjas[i], i)
+        if (errors.length) return json({ error: 'INVALID_RESOURCE_SNAPSHOT', message: errors[0] }, 400)
+      }
+      for (const [items, type] of [[snapshot.secretScrolls, 'SECRET_SCROLL'], [snapshot.summons, 'SUMMON']] as const) {
+        for (let i = 0; i < items.length; i += 1) {
+          const errors = validateOnlineResourceSnapshot(items[i], i, type)
+          if (errors.length) return json({ error: 'INVALID_RESOURCE_SNAPSHOT', message: errors[0] }, 400)
+        }
+      }
+      for (const item of [...snapshot.ninjas, ...snapshot.secretScrolls, ...snapshot.summons]) {
+        if (seen.has(item.id)) return json({ error: 'INVALID_RESOURCE_SNAPSHOT', message: `资源 ID 全局重复：${item.id}` }, 400)
+        seen.add(item.id)
+      }
+      const sanitizeAuxiliary = (
+        items: OnlineResourceSnapshot[],
+        resourceType: 'SECRET_SCROLL' | 'SUMMON',
+      ): OnlineResourceSnapshot[] => items.map((item) => ({
+        resourceType,
+        id: item.id,
+        name: item.name,
+        enabled: item.enabled,
+        ...(item.asset ? { asset: item.asset } : {}),
+        ...(item.avatar ? { avatar: item.avatar } : {}),
+        ...(item.assetKey ? { assetKey: item.assetKey } : {}),
+        ...(item.tags?.length ? { tags: [...item.tags] } : {}),
+      }))
+      resourceSnapshot = {
+        ninjas: snapshot.ninjas.map((item) => ({
+          id: item.id,
+          name: item.name,
+          enabled: item.enabled,
+          quality: item.quality,
+          ...(item.avatar ? { avatar: item.avatar } : {}),
+          ...(item.assetKey ? { assetKey: item.assetKey } : {}),
+        })),
+        secretScrolls: sanitizeAuxiliary(snapshot.secretScrolls, 'SECRET_SCROLL'),
+        summons: sanitizeAuxiliary(snapshot.summons, 'SUMMON'),
+      }
+      ninjas = resourceSnapshot.ninjas
+    }
+
     // 忍者池快照（BP 校验依据）：v0.4 直接保存完整快照（id/enabled 的超集，
     // 显示权威）；旧客户端兼容走 pool（仅 {id,enabled}）
     let pool: { id: string; enabled: boolean }[]
@@ -117,11 +174,16 @@ Deno.serve(async (req) => {
     }
 
     // 容量合法性：可用忍者必须足够完成整场比赛（最坏情况），否则拒绝创建
-    const available = countEnabledNinjas(pool)
-    const required = getMinimumRequiredPoolSize(rule)
-    if (available < required) {
+    const required = getMinimumRequiredResources(rule)
+    const available = {
+      ninjas: countEnabledResources(resourceSnapshot?.ninjas ?? pool),
+      secretScrolls: countEnabledResources(resourceSnapshot?.secretScrolls ?? []),
+      summons: countEnabledResources(resourceSnapshot?.summons ?? []),
+    }
+    const insufficient = (['ninjas', 'secretScrolls', 'summons'] as const).find((type) => available[type] < required[type])
+    if (insufficient) {
       return json(
-        { error: 'INSUFFICIENT_NINJA_POOL', message: '忍者池可用数量不足以完成整场比赛', required, available },
+        { error: 'INSUFFICIENT_RESOURCE_POOL', message: '资源池可用数量不足以完成整场比赛', resourceType: insufficient, required: required[insufficient], available: available[insufficient] },
         400,
       )
     }
@@ -179,10 +241,12 @@ Deno.serve(async (req) => {
       p_match_state: match,
       p_pool: pool,
       p_data_pack_metadata: packMetadata,
+      p_resource_snapshot: resourceSnapshot,
     })
     if (rpcError || !data || !data[0]) {
       const message = rpcError?.message ?? '创建失败'
       if (message.includes('INVALID_POOL')) return json({ error: 'POOL_TOO_LARGE', message: '忍者池不合法' }, 400)
+      if (message.includes('INVALID_RESOURCE_SNAPSHOT')) return json({ error: 'INVALID_RESOURCE_SNAPSHOT', message: '资源快照不合法' }, 400)
       return json({ error: 'DB_ERROR', message }, 500)
     }
 

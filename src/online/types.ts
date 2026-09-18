@@ -1,4 +1,4 @@
-import type { MatchState, OnlineCommandType, PendingUndo, RoomStatus, Seat } from '@bp-core'
+import type { BattleResourceSnapshot, MatchState, OnlineCommandType, PendingUndo, RoomStatus, Seat } from '@bp-core'
 
 /** 客户端在线模式的类型（与 Shared BP Core / 数据库结构对应） */
 
@@ -25,6 +25,7 @@ export interface RoomSnapshot {
     pool: unknown[]
     /** v0.4：房主创建时固化的数据包元信息（旧房间可能为 null） */
     data_pack_metadata?: { packId: string; schemaVersion?: number; packVersion?: string; checksum?: string } | null
+    resource_snapshot?: BattleResourceSnapshot | null
   } | null
   members: RoomMember[]
 }

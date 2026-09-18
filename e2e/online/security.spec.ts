@@ -173,6 +173,15 @@ test.describe.serial('在线安全（服务端边界）', () => {
     })
     expect(attempted.status).toBe(400)
     expect(attempted.json.code).toBe('NOT_PERMITTED')
+    const genericAttempt = await invoke('room-command', obs.token, {
+      roomId,
+      commandId: crypto.randomUUID(),
+      expectedRevision: currentRevision,
+      type: 'SELECT_RESOURCE',
+      payload: { resourceType: 'SECRET_SCROLL', resourceId: 'scroll-demo-barrier' },
+    })
+    expect(genericAttempt.status).toBe(400)
+    expect(genericAttempt.json.code).toBe('NOT_PERMITTED')
   })
 
   test('幂等：同一 commandId 发两次，状态只变化一次', async () => {

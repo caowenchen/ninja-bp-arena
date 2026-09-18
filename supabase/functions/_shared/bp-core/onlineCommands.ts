@@ -1,10 +1,10 @@
-import type { MatchState, Side } from './types.ts'
+import type { DraftResourceType, MatchState, Side } from './types.ts'
 import {
-  canSelectNinja,
+  canSelectResource,
   enterGame,
   nextGame,
   restartMatch,
-  selectNinja,
+  selectResource,
   setGameWinner,
   startMatch,
   undoLastAction,
@@ -14,6 +14,8 @@ import {
   computeTimerPhaseKey,
 } from './bpEngine.ts'
 import type { Ninja } from './types.ts'
+import type { BattleResources } from './resourceRegistry.ts'
+import { getResource } from './resourceRegistry.ts'
 
 /**
  * 在线房间命令处理器（Shared BP Core 的纯函数部分）。
@@ -31,6 +33,7 @@ import type { Ninja } from './types.ts'
 export type OnlineCommandType =
   | 'START_MATCH'
   | 'SELECT_NINJA'
+  | 'SELECT_RESOURCE'
   | 'ENTER_GAME'
   | 'SET_GAME_WINNER'
   | 'NEXT_GAME'
@@ -84,6 +87,7 @@ export interface RoomCommandContext {
   pendingUndo: PendingUndo | null
   /** 忍者池（SELECT_NINJA 校验忍者存在与 enabled） */
   ninjas: Array<Pick<Ninja, 'id' | 'enabled'>>
+  resources?: BattleResources
   now: number
 }
 
@@ -92,7 +96,7 @@ export interface RoomCommand {
   roomId: string
   expectedRevision: number
   type: OnlineCommandType
-  payload?: { ninjaId?: string; side?: Side }
+  payload?: { ninjaId?: string; resourceId?: string; resourceType?: DraftResourceType; side?: Side }
 }
 
 export type CommandOutcome =
@@ -121,6 +125,7 @@ export type RejectCode =
   | 'REVISION_CONFLICT'
   | 'INVALID_COMMAND'
   | 'NINJA_BLOCKED'
+  | 'RESOURCE_BLOCKED'
   | 'MATCH_FINISHED'
   | 'NOTHING_TO_UNDO'
   | 'NO_PENDING_UNDO'
@@ -156,25 +161,28 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
       return { match: next, extra: 'ACTIVE' }
     }
 
-    case 'SELECT_NINJA': {
+    case 'SELECT_NINJA':
+    case 'SELECT_RESOURCE': {
       if (ctx.roomStatus !== 'ACTIVE') return reject('ROOM_NOT_ACTIVE', '比赛未在进行中')
       if (!isSeatPlayer(ctx.mySeat)) return reject('NOT_PERMITTED', '观战者不能操作 BP')
       if (match.status === 'MATCH_FINISHED') return reject('MATCH_FINISHED', '比赛已经结束')
-
-      const ninjaId = cmd.payload?.ninjaId
-      if (typeof ninjaId !== 'string' || !ninjaId) return reject('INVALID_COMMAND', '缺少忍者 ID')
 
       // Side 由引擎阶段推导，不信任客户端
       const phase = getPhase(match)
       if (!phase.side || phase.sequenceComplete) return reject('NOT_YOUR_TURN', '当前不是选择阶段')
       if (phase.side !== ctx.mySeat) return reject('NOT_YOUR_TURN', '还没有轮到你操作')
+      const resourceType = cmd.type === 'SELECT_NINJA' ? 'NINJA' : cmd.payload?.resourceType
+      if (!resourceType || resourceType !== phase.resourceType) return reject('INVALID_COMMAND', '资源类型与当前阶段不一致')
+      const resourceId = cmd.type === 'SELECT_NINJA' ? cmd.payload?.ninjaId : cmd.payload?.resourceId
+      if (typeof resourceId !== 'string' || !resourceId) return reject('INVALID_COMMAND', '缺少资源 ID')
+      const resource = ctx.resources
+        ? getResource(ctx.resources, resourceType, resourceId)
+        : resourceType === 'NINJA' ? ctx.ninjas.find((item) => item.id === resourceId) : undefined
+      const check = canSelectResource(match, resourceType, resourceId, resource)
+      if (!check.allowed) return reject(resourceType === 'NINJA' ? 'NINJA_BLOCKED' : 'RESOURCE_BLOCKED', check.reason ?? '无法选择该资源')
 
-      const ninja = ctx.ninjas.find((n) => n.id === ninjaId)
-      const check = canSelectNinja(match, ninjaId, ninja)
-      if (!check.allowed) return reject('NINJA_BLOCKED', check.reason ?? '无法选择该忍者')
-
-      const result = selectNinja(match, ninjaId, ninja)
-      if (!result.ok || !result.state) return reject('ENGINE_REJECTED', result.reason ?? '无法选择该忍者')
+      const result = selectResource(match, resourceType, resourceId, resource)
+      if (!result.ok || !result.state) return reject('ENGINE_REJECTED', result.reason ?? '无法选择该资源')
       return { match: result.state }
     }
 
