@@ -55,8 +55,9 @@ async function expectNinjaLockedForWrongTurn(page: Page, name: string, waitingSi
   await expect(card).toBeVisible({ timeout: 15_000 })
   await expect(card).toHaveAttribute('aria-disabled', 'true')
   await expect(card).toHaveAttribute('title', new RegExp(`等待${waitingSide}方选择`))
-  await card.click()
-  await expect(card).toBeVisible()
+  await card.click({ force: true })
+  await expect(page.getByText(new RegExp(`${waitingSide}方禁用阶段`))).toBeVisible()
+  await expect(card).toHaveAttribute('aria-disabled', 'true')
 }
 
 async function clickButton(page: Page, text: string) {
