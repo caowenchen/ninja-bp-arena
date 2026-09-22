@@ -188,9 +188,11 @@ export function BPWorkspace() {
   const enabledResourceTypes = getResourceDraftRules(match.rule).filter((rule) => rule.enabled).map((rule) => rule.resourceType)
   const interactionReason = viewedResourceType !== phase.resourceType
     ? `当前阶段为${phase.resourceType ? RESOURCE_TYPE_LABEL[phase.resourceType] : '其他资源'}`
-    : !source.canOperate
-      ? source.mySeat === 'OBSERVER' ? '观战模式不可操作' : '当前席位不可操作'
-      : waitingOther ? `等待${phase.side === 'BLUE' ? '蓝方' : '红方'}选择` : undefined
+    : source.mySeat === 'OBSERVER'
+      ? '观战模式不可操作'
+      : waitingOther
+        ? `等待${phase.side === 'BLUE' ? '蓝方' : '红方'}选择`
+        : !source.canOperate ? '当前席位不可操作' : undefined
 
   const stage = (
     <BPStage
