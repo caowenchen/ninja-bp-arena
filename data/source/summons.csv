@@ -1,0 +1,9 @@
+id,name,aliases,tags,enabled,deprecated,assetKey,sortOrder,dataVersion,remark,sourceRefs
+summon-demo-toad,蛤蟆伙伴（示例）,,攻击|Demo,true,false,,1,2026.09.1,示例数据,source-project-demo
+summon-demo-hound,忍犬伙伴（示例）,,追踪|Demo,true,false,,2,2026.09.1,示例数据,source-project-demo
+summon-demo-slug,蛞蝓伙伴（示例）,,恢复|Demo,true,false,,3,2026.09.1,示例数据,source-project-demo
+summon-demo-hawk,忍鹰伙伴（示例）,,机动|Demo,true,false,,4,2026.09.1,示例数据,source-project-demo
+summon-demo-snake,白蛇伙伴（示例）,,控制|Demo,true,false,,5,2026.09.1,示例数据,source-project-demo
+summon-demo-turtle,忍龟伙伴（示例）,,防御|Demo,true,false,,6,2026.09.1,示例数据,source-project-demo
+summon-demo-beetle,甲虫伙伴（示例）,,干扰|Demo,true,false,,7,2026.09.1,示例数据,source-project-demo
+summon-demo-cat,忍猫伙伴（示例）,,突进|Demo,true,false,,8,2026.09.1,示例数据,source-project-demo

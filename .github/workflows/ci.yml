@@ -21,6 +21,8 @@ jobs:
         run: npm run typecheck
       - name: Data Pack Validation（内置数据包校验）
         run: npm run data:validate
+      - name: Production Data Audit（Source / Stable ID / deterministic output）
+        run: npm run data:audit
       - name: Lint
         run: npm run lint
       - name: Unit tests

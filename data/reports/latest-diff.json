@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "fromVersion": "2026.09.1",
+  "toVersion": "2026.09.2",
+  "resources": {
+    "ninjas": {
+      "added": [],
+      "updated": [
+        "example-naruto-001",
+        "example-sasuke-002",
+        "example-kakashi-003",
+        "example-itachi-004",
+        "example-minato-005",
+        "example-pain-006",
+        "example-hashirama-007",
+        "example-obito-008",
+        "example-jiraiya-009",
+        "example-tsunade-010",
+        "example-orochimaru-011",
+        "example-gaara-012",
+        "example-neji-013",
+        "example-sakura-014",
+        "example-deidara-015",
+        "example-sasori-016",
+        "example-kisame-017",
+        "example-lee-018",
+        "example-tenten-019",
+        "example-shikamaru-020",
+        "example-choji-021",
+        "example-ino-022",
+        "example-kiba-023",
+        "example-shino-024",
+        "example-hidan-025",
+        "example-kakuzu-026",
+        "example-kabuto-027",
+        "example-shizune-028"
+      ],
+      "disabled": [],
+      "removed": []
+    },
+    "secretScrolls": {
+      "added": [],
+      "updated": [
+        "scroll-demo-barrier",
+        "scroll-demo-flame",
+        "scroll-demo-wind",
+        "scroll-demo-heal"
+      ],
+      "disabled": [],
+      "removed": []
+    },
+    "summons": {
+      "added": [],
+      "updated": [
+        "summon-demo-toad",
+        "summon-demo-hound",
+        "summon-demo-slug",
+        "summon-demo-hawk",
+        "summon-demo-snake",
+        "summon-demo-turtle",
+        "summon-demo-beetle",
+        "summon-demo-cat"
+      ],
+      "disabled": [],
+      "removed": []
+    }
+  }
+}

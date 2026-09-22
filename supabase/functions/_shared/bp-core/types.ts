@@ -31,6 +31,8 @@ export interface DraftResourceBase {
   sortOrder?: number
   version?: string
   remark?: string
+  /** 可选来源引用，指向 manifest.sources[].id；通常仅用于例外条目。 */
+  sourceRefs?: string[]
 }
 
 export type NinjaQuality = 'S' | 'A' | 'B' | 'C'

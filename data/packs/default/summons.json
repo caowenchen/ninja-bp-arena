@@ -1,10 +1,122 @@
 [
-  { "id": "summon-demo-toad", "name": "蛤蟆伙伴（示例）", "tags": ["攻击", "Demo"], "enabled": true, "dataVersion": "2026.09.1" },
-  { "id": "summon-demo-hound", "name": "忍犬伙伴（示例）", "tags": ["追踪", "Demo"], "enabled": true, "dataVersion": "2026.09.1" },
-  { "id": "summon-demo-slug", "name": "蛞蝓伙伴（示例）", "tags": ["恢复", "Demo"], "enabled": true, "dataVersion": "2026.09.1" },
-  { "id": "summon-demo-hawk", "name": "忍鹰伙伴（示例）", "tags": ["机动", "Demo"], "enabled": true, "dataVersion": "2026.09.1" },
-  { "id": "summon-demo-snake", "name": "白蛇伙伴（示例）", "tags": ["控制", "Demo"], "enabled": true, "dataVersion": "2026.09.1" },
-  { "id": "summon-demo-turtle", "name": "忍龟伙伴（示例）", "tags": ["防御", "Demo"], "enabled": true, "dataVersion": "2026.09.1" },
-  { "id": "summon-demo-beetle", "name": "甲虫伙伴（示例）", "tags": ["干扰", "Demo"], "enabled": true, "dataVersion": "2026.09.1" },
-  { "id": "summon-demo-cat", "name": "忍猫伙伴（示例）", "tags": ["突进", "Demo"], "enabled": true, "dataVersion": "2026.09.1" }
+  {
+    "id": "summon-demo-toad",
+    "name": "蛤蟆伙伴（示例）",
+    "tags": [
+      "攻击",
+      "Demo"
+    ],
+    "enabled": true,
+    "dataVersion": "2026.09.1",
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 1
+  },
+  {
+    "id": "summon-demo-hound",
+    "name": "忍犬伙伴（示例）",
+    "tags": [
+      "追踪",
+      "Demo"
+    ],
+    "enabled": true,
+    "dataVersion": "2026.09.1",
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 2
+  },
+  {
+    "id": "summon-demo-slug",
+    "name": "蛞蝓伙伴（示例）",
+    "tags": [
+      "恢复",
+      "Demo"
+    ],
+    "enabled": true,
+    "dataVersion": "2026.09.1",
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 3
+  },
+  {
+    "id": "summon-demo-hawk",
+    "name": "忍鹰伙伴（示例）",
+    "tags": [
+      "机动",
+      "Demo"
+    ],
+    "enabled": true,
+    "dataVersion": "2026.09.1",
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 4
+  },
+  {
+    "id": "summon-demo-snake",
+    "name": "白蛇伙伴（示例）",
+    "tags": [
+      "控制",
+      "Demo"
+    ],
+    "enabled": true,
+    "dataVersion": "2026.09.1",
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 5
+  },
+  {
+    "id": "summon-demo-turtle",
+    "name": "忍龟伙伴（示例）",
+    "tags": [
+      "防御",
+      "Demo"
+    ],
+    "enabled": true,
+    "dataVersion": "2026.09.1",
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 6
+  },
+  {
+    "id": "summon-demo-beetle",
+    "name": "甲虫伙伴（示例）",
+    "tags": [
+      "干扰",
+      "Demo"
+    ],
+    "enabled": true,
+    "dataVersion": "2026.09.1",
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 7
+  },
+  {
+    "id": "summon-demo-cat",
+    "name": "忍猫伙伴（示例）",
+    "tags": [
+      "突进",
+      "Demo"
+    ],
+    "enabled": true,
+    "dataVersion": "2026.09.1",
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 8
+  }
 ]

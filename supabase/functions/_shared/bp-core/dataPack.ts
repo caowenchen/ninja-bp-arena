@@ -31,6 +31,9 @@ export interface NinjaDataPackManifest {
   updatedAt: string
   /** 数据来源说明（如维护者 / 仓库），仅展示 */
   source?: string
+  /** DEMO=示例；COMMUNITY=社区维护；VERIFIED=维护者按所列来源核验，均不代表官方认证。 */
+  dataStatus?: 'DEMO' | 'COMMUNITY' | 'VERIFIED'
+  sources?: Array<{ id: string; label: string; url?: string; checkedAt?: string }>
   description?: string
   /** 忍者数量（校验必须 === ninjas.length） */
   ninjaCount: number
@@ -118,6 +121,21 @@ export function validateDataPackManifest(value: unknown): string[] {
   if (value.source !== undefined && (typeof value.source !== 'string' || value.source.length > 200)) {
     errors.push('manifest.source 过长（>200）')
   }
+  if (value.dataStatus !== undefined && !['DEMO', 'COMMUNITY', 'VERIFIED'].includes(String(value.dataStatus))) {
+    errors.push('manifest.dataStatus 必须是 DEMO/COMMUNITY/VERIFIED')
+  }
+  if (value.sources !== undefined) {
+    if (!Array.isArray(value.sources)) errors.push('manifest.sources 必须是数组')
+    else for (const [index, source] of value.sources.entries()) {
+      if (!isRecord(source) || typeof source.id !== 'string' || !source.id.trim() || typeof source.label !== 'string' || !source.label.trim()) {
+        errors.push(`manifest.sources[${index}] 必须包含 id 与 label`)
+      } else if (source.url !== undefined && (typeof source.url !== 'string' || !/^https:\/\//i.test(source.url))) {
+        errors.push(`manifest.sources[${index}].url 必须是 https URL`)
+      } else if (source.checkedAt !== undefined && (typeof source.checkedAt !== 'string' || Number.isNaN(Date.parse(source.checkedAt)))) {
+        errors.push(`manifest.sources[${index}].checkedAt 必须是合法日期`)
+      }
+    }
+  }
   if (value.description !== undefined && (typeof value.description !== 'string' || value.description.length > 500)) {
     errors.push('manifest.description 过长（>500）')
   }
@@ -159,6 +177,7 @@ export function validatePackNinja(value: unknown, index: number): string[] {
     errors.push(`${label}.tags 缺失`)
   }
   if (rec.aliases !== undefined && !isStringArray(rec.aliases)) errors.push(`${label}.aliases 必须是 string[]`)
+  if (rec.sourceRefs !== undefined && !isStringArray(rec.sourceRefs)) errors.push(`${label}.sourceRefs 必须是 string[]`)
   if (rec.series !== undefined && !isStringArray(rec.series)) errors.push(`${label}.series 必须是 string[]`)
   if (rec.forms !== undefined && !isStringArray(rec.forms)) errors.push(`${label}.forms 必须是 string[]`)
   if (rec.roles !== undefined && !isStringArray(rec.roles)) errors.push(`${label}.roles 必须是 string[]`)
@@ -202,6 +221,7 @@ export function validatePackResource(value: unknown, index: number, key: 'secret
   if (typeof rec.enabled !== 'boolean') errors.push(`${label}.enabled 必须是 boolean`)
   if (rec.tags !== undefined && !isStringArray(rec.tags)) errors.push(`${label}.tags 必须是 string[]`)
   if (rec.aliases !== undefined && !isStringArray(rec.aliases)) errors.push(`${label}.aliases 必须是 string[]`)
+  if (rec.sourceRefs !== undefined && !isStringArray(rec.sourceRefs)) errors.push(`${label}.sourceRefs 必须是 string[]`)
   for (const field of ['asset', 'avatar'] as const) {
     if (rec[field] !== undefined && (typeof rec[field] !== 'string' || rec[field].length > 500)) {
       errors.push(`${label}.${field} 必须是长度不超过 500 的 string`)

@@ -67,6 +67,12 @@ if (typeof manifest.version !== 'string' || !manifest.version.trim()) errors.pus
 if (typeof manifest.updatedAt !== 'string' || Number.isNaN(Date.parse(manifest.updatedAt))) {
   errors.push('manifest.updatedAt 必须是合法时间')
 }
+if (!['DEMO', 'COMMUNITY', 'VERIFIED'].includes(manifest.dataStatus)) errors.push('manifest.dataStatus 必须是 DEMO/COMMUNITY/VERIFIED')
+if (!Array.isArray(manifest.sources)) errors.push('manifest.sources 必须是数组')
+else manifest.sources.forEach((source, index) => {
+  if (!source || typeof source.id !== 'string' || !source.id.trim() || typeof source.label !== 'string' || !source.label.trim()) errors.push(`manifest.sources[${index}] 缺少 id/label`)
+  if (source.url !== undefined && !/^https:\/\//i.test(source.url)) errors.push(`manifest.sources[${index}].url 必须是 https URL`)
+})
 
 // ---- ninjaCount ----
 if (manifest.ninjaCount !== ninjas.length) {
@@ -107,8 +113,10 @@ ninjas.forEach((n, i) => {
     errors.push(`${label}.releaseDate 必须是合法的 YYYY-MM-DD / ISO 时间`)
   }
   if (n.avatar !== undefined && (typeof n.avatar !== 'string' || n.avatar.length > 500)) errors.push(`${label}.avatar 非法或过长`)
+  if (typeof n.avatar === 'string' && /^data:/i.test(n.avatar)) errors.push(`${label}.avatar 禁止 data: URL`)
   if (n.assetKey !== undefined && (typeof n.assetKey !== 'string' || n.assetKey.length > 200)) errors.push(`${label}.assetKey 非法或过长`)
   if (n.deprecated !== undefined && typeof n.deprecated !== 'boolean') errors.push(`${label}.deprecated 必须是 boolean`)
+  if (n.sourceRefs !== undefined && !isStringArray(n.sourceRefs)) errors.push(`${label}.sourceRefs 必须是 string[]`)
 })
 
 function validateAux(items, key) {
@@ -124,8 +132,10 @@ function validateAux(items, key) {
     if (item.aliases !== undefined && !isStringArray(item.aliases)) errors.push(`${label}.aliases 必须是 string[]`)
     for (const field of ['asset', 'avatar']) {
       if (item[field] !== undefined && (typeof item[field] !== 'string' || item[field].length > 500)) errors.push(`${label}.${field} 非法或过长`)
+      if (typeof item[field] === 'string' && /^data:/i.test(item[field])) errors.push(`${label}.${field} 禁止 data: URL`)
     }
     if (item.assetKey !== undefined && (typeof item.assetKey !== 'string' || item.assetKey.length > 200)) errors.push(`${label}.assetKey 非法或过长`)
+    if (item.sourceRefs !== undefined && !isStringArray(item.sourceRefs)) errors.push(`${label}.sourceRefs 必须是 string[]`)
   })
 }
 validateAux(secretScrolls, 'secretScrolls')

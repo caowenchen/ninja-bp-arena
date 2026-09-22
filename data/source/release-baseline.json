@@ -1,0 +1,251 @@
+{
+  "version": "2026.09.1",
+  "resources": {
+    "ninjas": [
+      {
+        "id": "example-naruto-001",
+        "name": "漩涡鸣人",
+        "enabled": true,
+        "hash": "sha256:037a0804da88e191dba66f4ca4c6bb1cc5a78b7dd5f88d614a24289f130c0d2b"
+      },
+      {
+        "id": "example-sasuke-002",
+        "name": "宇智波佐助",
+        "enabled": true,
+        "hash": "sha256:aa4f7a4bfe7c1f559732a8be0aa7558c086b7996a1d0beda3338305ad7f651b5"
+      },
+      {
+        "id": "example-kakashi-003",
+        "name": "旗木卡卡西",
+        "enabled": true,
+        "hash": "sha256:92ee70dbc8c3e713d84981a8310bf0067edbe32bddb80ad14b21e8c65c022815"
+      },
+      {
+        "id": "example-itachi-004",
+        "name": "宇智波鼬",
+        "enabled": true,
+        "hash": "sha256:b41430ef300ccb7bd49250d6e512de2d30039ed7223c9f76fcbd1ea8c9e6e046"
+      },
+      {
+        "id": "example-minato-005",
+        "name": "波风水门",
+        "enabled": true,
+        "hash": "sha256:b957af6b3768804ee0db068357572b33b601064497a7b10883fd3ea345145083"
+      },
+      {
+        "id": "example-pain-006",
+        "name": "佩恩",
+        "enabled": true,
+        "hash": "sha256:6611cdc0bed20a90d2696ad8817c86b6c552edb3c7bfbc0b614b5c30d9447ce8"
+      },
+      {
+        "id": "example-hashirama-007",
+        "name": "千手柱间",
+        "enabled": true,
+        "hash": "sha256:716d9c7e2f4e4e193a4b3117115815fd21ecf290337b58b8ccc339238a22c393"
+      },
+      {
+        "id": "example-obito-008",
+        "name": "宇智波带土",
+        "enabled": true,
+        "hash": "sha256:e96d19b17396e4673b2428f3f435a2d98e51f80f6608dbdffcee7fc2800cdcaa"
+      },
+      {
+        "id": "example-jiraiya-009",
+        "name": "自来也",
+        "enabled": true,
+        "hash": "sha256:3c7569acdc134754080a8cb8d65a006dc04907efdcc1dc04e7f8886c3f13fbbb"
+      },
+      {
+        "id": "example-tsunade-010",
+        "name": "纲手",
+        "enabled": true,
+        "hash": "sha256:a5196b317489ba6f354a07ef329407276da26b64f9b0eaab974b0150c6dc7bc6"
+      },
+      {
+        "id": "example-orochimaru-011",
+        "name": "大蛇丸",
+        "enabled": true,
+        "hash": "sha256:9a81e4c8a0936f0546cc285eb1a4dc934f88e8e0d2e731e30b3e983fb6294d59"
+      },
+      {
+        "id": "example-gaara-012",
+        "name": "我爱罗",
+        "enabled": true,
+        "hash": "sha256:919f809837b4e39bb6f362d55b0b4ae816e83b3d2540a73788f609a3d72026ff"
+      },
+      {
+        "id": "example-neji-013",
+        "name": "日向宁次",
+        "enabled": true,
+        "hash": "sha256:cab52f7e9b70d25535d6f82c4e4d2d46c935221d59e5d6ea1017ffc36045d4c8"
+      },
+      {
+        "id": "example-sakura-014",
+        "name": "春野樱",
+        "enabled": true,
+        "hash": "sha256:a58a5ebe36393c2cacd826a839a4a1bdaf4b1b2446e8d181d53b6fa861bd2a98"
+      },
+      {
+        "id": "example-deidara-015",
+        "name": "迪达拉",
+        "enabled": true,
+        "hash": "sha256:3978cbe6c384d4cd080bf819e97e1f384374a818bb3e68e21f455f98f1db870b"
+      },
+      {
+        "id": "example-sasori-016",
+        "name": "蝎",
+        "enabled": true,
+        "hash": "sha256:8986b871548a7e761507819b133c70a8bacca8fb4a96afb0df6c4e0f98473d8f"
+      },
+      {
+        "id": "example-kisame-017",
+        "name": "干柿鬼鲛",
+        "enabled": true,
+        "hash": "sha256:42af4a3ef157e86f733e99105c9bae11b70f1688d3bebbf83273386ac43960c1"
+      },
+      {
+        "id": "example-lee-018",
+        "name": "李洛克",
+        "enabled": true,
+        "hash": "sha256:4ca4779e74b2803094532ba126b9c079486549a81f3c44f122668a65dc95582b"
+      },
+      {
+        "id": "example-tenten-019",
+        "name": "天天",
+        "enabled": true,
+        "hash": "sha256:77231a627a6d32d8ebb92a0af4eb196081e376f55e3390181a6323a43210fc27"
+      },
+      {
+        "id": "example-shikamaru-020",
+        "name": "奈良鹿丸",
+        "enabled": true,
+        "hash": "sha256:d0154ff2b7e20a3d6a8fb8d8d62bcf09fea5b71d415705851b7e930c9ec0e43f"
+      },
+      {
+        "id": "example-choji-021",
+        "name": "秋道丁次",
+        "enabled": true,
+        "hash": "sha256:b6a6021f43d7c56efb03cfd3df08527920b9b70d0b7b40a88e823567fcbf240a"
+      },
+      {
+        "id": "example-ino-022",
+        "name": "山中井野",
+        "enabled": true,
+        "hash": "sha256:a82aa7e67a19f5939d6077c7d23296597659e1dbbd23f36176b784c46baad309"
+      },
+      {
+        "id": "example-kiba-023",
+        "name": "犬冢牙",
+        "enabled": true,
+        "hash": "sha256:8a2d9a0f82d880cd62d2bab011e4a55eb5ffba86d8f2bfbd4f2f71f06dbc10dd"
+      },
+      {
+        "id": "example-shino-024",
+        "name": "油女志乃",
+        "enabled": true,
+        "hash": "sha256:df2be1e93af97b2a24d0eca67f7a718d8f80e56cf9efca6554732088200e5718"
+      },
+      {
+        "id": "example-hidan-025",
+        "name": "飞段",
+        "enabled": true,
+        "hash": "sha256:d05c1e27d20aa8d77af3ae70edf95fe842ad9e4d71e11b67410662be4a4d3fec"
+      },
+      {
+        "id": "example-kakuzu-026",
+        "name": "角都",
+        "enabled": true,
+        "hash": "sha256:63b20598a1bf44dd81ccdb33560c0c8be8095e29085491d5b8e8dc13e7f3e01e"
+      },
+      {
+        "id": "example-kabuto-027",
+        "name": "药师兜",
+        "enabled": true,
+        "hash": "sha256:e1530e17d4a9633885859d480f6868f837790f290c7d4b68f5e919d8dfb73ff3"
+      },
+      {
+        "id": "example-shizune-028",
+        "name": "静音",
+        "enabled": true,
+        "hash": "sha256:2634a4e6c07829907e6cfda53c3a405204bb266f7100e6915a872f35c8b3d46b"
+      }
+    ],
+    "secretScrolls": [
+      {
+        "id": "scroll-demo-barrier",
+        "name": "护身结界（示例）",
+        "enabled": true,
+        "hash": "sha256:baef820e6223b573e82001e4d9045dc6c249b2ad4ac525444bb755b374531fd8"
+      },
+      {
+        "id": "scroll-demo-flame",
+        "name": "炎遁卷轴（示例）",
+        "enabled": true,
+        "hash": "sha256:37d13643b07f6e13544d9c6d3c9a98f06172493d692181ed62402af4b7cb3338"
+      },
+      {
+        "id": "scroll-demo-wind",
+        "name": "风遁卷轴（示例）",
+        "enabled": true,
+        "hash": "sha256:2cb0eb41901b26a5d32c86b8e972ecb02b4b272dd8cd9bbf4e2306ed197c7833"
+      },
+      {
+        "id": "scroll-demo-heal",
+        "name": "治愈卷轴（示例）",
+        "enabled": true,
+        "hash": "sha256:214d802b8e0ee9bbea393804ae3177bba83a4f8e8daefaff70d18409d3051908"
+      }
+    ],
+    "summons": [
+      {
+        "id": "summon-demo-toad",
+        "name": "蛤蟆伙伴（示例）",
+        "enabled": true,
+        "hash": "sha256:0ceb6d96de513bf82970c1b6a4f0a360e7bc0c86024c6d7ca8c0ae4adf17ab63"
+      },
+      {
+        "id": "summon-demo-hound",
+        "name": "忍犬伙伴（示例）",
+        "enabled": true,
+        "hash": "sha256:4c34046336418f577d047fa99c5dab1eef0b2c4fca9d7148d456e04d73cf99e0"
+      },
+      {
+        "id": "summon-demo-slug",
+        "name": "蛞蝓伙伴（示例）",
+        "enabled": true,
+        "hash": "sha256:5a6fa6765150d8471308140dcd14a10cdcb3981cf6c2127265d7a710d3327497"
+      },
+      {
+        "id": "summon-demo-hawk",
+        "name": "忍鹰伙伴（示例）",
+        "enabled": true,
+        "hash": "sha256:63871a1b0bd67486f31d6251456cd8dfec8602c087bbe3b22e33ed19807cc418"
+      },
+      {
+        "id": "summon-demo-snake",
+        "name": "白蛇伙伴（示例）",
+        "enabled": true,
+        "hash": "sha256:71e844e6eae27e1822d2fc74186ec24d7542590b79c7127b8f584a230883465e"
+      },
+      {
+        "id": "summon-demo-turtle",
+        "name": "忍龟伙伴（示例）",
+        "enabled": true,
+        "hash": "sha256:5385d10bf2e259ee757826af3e7560afeccfefbf2784791bb8af6e3da9ce6fc8"
+      },
+      {
+        "id": "summon-demo-beetle",
+        "name": "甲虫伙伴（示例）",
+        "enabled": true,
+        "hash": "sha256:fc91ce9c1417a4b900d7e23597746eea896aca08d1e5bde66d2d4c65c35fc743"
+      },
+      {
+        "id": "summon-demo-cat",
+        "name": "忍猫伙伴（示例）",
+        "enabled": true,
+        "hash": "sha256:325c51d277da017b6eb40fa46d7b4c0c4f21d3ee8975012479c9ed2eaec64950"
+      }
+    ]
+  }
+}

@@ -2,365 +2,477 @@
   {
     "id": "example-naruto-001",
     "name": "漩涡鸣人",
-    "slug": "naruto",
-    "quality": "S",
     "tags": [
       "近战",
       "突进"
     ],
     "enabled": true,
+    "quality": "S",
+    "slug": "naruto",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 1
   },
   {
     "id": "example-sasuke-002",
     "name": "宇智波佐助",
-    "slug": "sasuke",
-    "quality": "S",
     "tags": [
-      "近战",
-      "爆发"
+      "爆发",
+      "近战"
     ],
     "enabled": true,
+    "quality": "S",
+    "slug": "sasuke",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 2
   },
   {
     "id": "example-kakashi-003",
     "name": "旗木卡卡西",
-    "slug": "kakashi",
-    "quality": "S",
     "tags": [
       "近战",
       "位移"
     ],
     "enabled": true,
+    "quality": "S",
+    "slug": "kakashi",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 3
   },
   {
     "id": "example-itachi-004",
     "name": "宇智波鼬",
-    "slug": "itachi",
-    "quality": "S",
     "tags": [
-      "远程",
-      "控制"
+      "控制",
+      "远程"
     ],
     "enabled": true,
+    "quality": "S",
+    "slug": "itachi",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 4
   },
   {
     "id": "example-minato-005",
     "name": "波风水门",
-    "slug": "minato",
-    "quality": "S",
     "tags": [
       "近战",
       "位移"
     ],
     "enabled": true,
+    "quality": "S",
+    "slug": "minato",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 5
   },
   {
     "id": "example-pain-006",
     "name": "佩恩",
-    "slug": "pain",
-    "quality": "S",
     "tags": [
-      "远程",
-      "控制"
+      "控制",
+      "远程"
     ],
     "enabled": true,
+    "quality": "S",
+    "slug": "pain",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 6
   },
   {
     "id": "example-hashirama-007",
     "name": "千手柱间",
-    "slug": "hashirama",
-    "quality": "S",
     "tags": [
-      "近战",
-      "爆发"
+      "爆发",
+      "近战"
     ],
     "enabled": true,
+    "quality": "S",
+    "slug": "hashirama",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 7
   },
   {
     "id": "example-obito-008",
     "name": "宇智波带土",
-    "slug": "obito",
-    "quality": "S",
     "tags": [
       "近战",
       "位移"
     ],
     "enabled": true,
+    "quality": "S",
+    "slug": "obito",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 8
   },
   {
     "id": "example-jiraiya-009",
     "name": "自来也",
-    "slug": "jiraiya",
-    "quality": "A",
     "tags": [
-      "近战",
-      "爆发"
+      "爆发",
+      "近战"
     ],
     "enabled": true,
+    "quality": "A",
+    "slug": "jiraiya",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 9
   },
   {
     "id": "example-tsunade-010",
     "name": "纲手",
-    "slug": "tsunade",
-    "quality": "A",
     "tags": [
       "近战",
       "抓取"
     ],
     "enabled": true,
+    "quality": "A",
+    "slug": "tsunade",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 10
   },
   {
     "id": "example-orochimaru-011",
     "name": "大蛇丸",
-    "slug": "orochimaru",
-    "quality": "A",
     "tags": [
-      "远程",
-      "消耗"
+      "消耗",
+      "远程"
     ],
     "enabled": true,
+    "quality": "A",
+    "slug": "orochimaru",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 11
   },
   {
     "id": "example-gaara-012",
     "name": "我爱罗",
-    "slug": "gaara",
-    "quality": "A",
     "tags": [
-      "远程",
-      "控制"
+      "控制",
+      "远程"
     ],
     "enabled": true,
+    "quality": "A",
+    "slug": "gaara",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 12
   },
   {
     "id": "example-neji-013",
     "name": "日向宁次",
-    "slug": "neji",
-    "quality": "A",
     "tags": [
       "近战",
       "突进"
     ],
     "enabled": true,
+    "quality": "A",
+    "slug": "neji",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 13
   },
   {
     "id": "example-sakura-014",
     "name": "春野樱",
-    "slug": "sakura",
-    "quality": "A",
     "tags": [
-      "近战",
-      "爆发"
+      "爆发",
+      "近战"
     ],
     "enabled": true,
+    "quality": "A",
+    "slug": "sakura",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 14
   },
   {
     "id": "example-deidara-015",
     "name": "迪达拉",
-    "slug": "deidara",
-    "quality": "A",
     "tags": [
-      "远程",
-      "消耗"
+      "消耗",
+      "远程"
     ],
     "enabled": true,
+    "quality": "A",
+    "slug": "deidara",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 15
   },
   {
     "id": "example-sasori-016",
     "name": "蝎",
-    "slug": "sasori",
-    "quality": "A",
     "tags": [
       "远程",
       "抓取"
     ],
     "enabled": true,
+    "quality": "A",
+    "slug": "sasori",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 16
   },
   {
     "id": "example-kisame-017",
     "name": "干柿鬼鲛",
-    "slug": "kisame",
-    "quality": "A",
     "tags": [
       "近战",
       "消耗"
     ],
     "enabled": true,
+    "quality": "A",
+    "slug": "kisame",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 17
   },
   {
     "id": "example-lee-018",
     "name": "李洛克",
-    "slug": "lee",
-    "quality": "B",
     "tags": [
       "近战",
       "突进"
     ],
     "enabled": true,
+    "quality": "B",
+    "slug": "lee",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 18
   },
   {
     "id": "example-tenten-019",
     "name": "天天",
-    "slug": "tenten",
-    "quality": "B",
     "tags": [
-      "远程",
-      "消耗"
+      "消耗",
+      "远程"
     ],
     "enabled": true,
+    "quality": "B",
+    "slug": "tenten",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 19
   },
   {
     "id": "example-shikamaru-020",
     "name": "奈良鹿丸",
-    "slug": "shikamaru",
-    "quality": "B",
     "tags": [
-      "远程",
-      "控制"
+      "控制",
+      "远程"
     ],
     "enabled": true,
+    "quality": "B",
+    "slug": "shikamaru",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 20
   },
   {
     "id": "example-choji-021",
     "name": "秋道丁次",
-    "slug": "choji",
-    "quality": "B",
     "tags": [
       "近战",
       "抓取"
     ],
     "enabled": true,
+    "quality": "B",
+    "slug": "choji",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 21
   },
   {
     "id": "example-ino-022",
     "name": "山中井野",
-    "slug": "ino",
-    "quality": "B",
     "tags": [
-      "远程",
-      "控制"
+      "控制",
+      "远程"
     ],
     "enabled": true,
+    "quality": "B",
+    "slug": "ino",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 22
   },
   {
     "id": "example-kiba-023",
     "name": "犬冢牙",
-    "slug": "kiba",
-    "quality": "B",
     "tags": [
       "近战",
       "突进"
     ],
     "enabled": true,
+    "quality": "B",
+    "slug": "kiba",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 23
   },
   {
     "id": "example-shino-024",
     "name": "油女志乃",
-    "slug": "shino",
-    "quality": "B",
     "tags": [
-      "远程",
-      "消耗"
+      "消耗",
+      "远程"
     ],
     "enabled": true,
+    "quality": "B",
+    "slug": "shino",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 24
   },
   {
     "id": "example-hidan-025",
     "name": "飞段",
-    "slug": "hidan",
-    "quality": "B",
     "tags": [
       "近战",
       "消耗"
     ],
     "enabled": true,
+    "quality": "B",
+    "slug": "hidan",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 25
   },
   {
     "id": "example-kakuzu-026",
     "name": "角都",
-    "slug": "kakuzu",
-    "quality": "B",
     "tags": [
-      "远程",
-      "消耗"
+      "消耗",
+      "远程"
     ],
     "enabled": true,
+    "quality": "B",
+    "slug": "kakuzu",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 26
   },
   {
     "id": "example-kabuto-027",
     "name": "药师兜",
-    "slug": "kabuto",
-    "quality": "C",
     "tags": [
-      "远程",
-      "消耗"
+      "消耗",
+      "远程"
     ],
     "enabled": true,
+    "quality": "C",
+    "slug": "kabuto",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 27
   },
   {
     "id": "example-shizune-028",
     "name": "静音",
-    "slug": "shizune",
-    "quality": "C",
     "tags": [
       "近战",
       "消耗"
     ],
     "enabled": true,
+    "quality": "C",
+    "slug": "shizune",
     "dataVersion": "2026.08.1",
-    "remark": "示例数据"
+    "remark": "示例数据",
+    "sourceRefs": [
+      "source-project-demo"
+    ],
+    "sortOrder": 28
   }
 ]

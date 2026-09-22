@@ -1,5 +1,4 @@
 {
-  "schemaVersion": 2,
   "id": "ninja-bp-default",
   "name": "忍界 BP 示例数据（Demo）",
   "version": "2026.09.2",
@@ -14,9 +13,5 @@
     }
   ],
   "description": "用于演示与联调的 Battle Data Pack；忍者、秘卷、通灵均为 Demo 示例数据，不是官方完整名单。",
-  "ninjaCount": 28,
-  "secretScrollCount": 4,
-  "summonCount": 8,
-  "checksum": "sha256:516c233941ee973fc9f8c1fe0f96714a108f8c0d615645dcad4dc6285a6a00fa",
   "assetBaseUrl": "/assets/ninjas/"
 }
