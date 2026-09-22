@@ -51,7 +51,7 @@ test('在线 Full Loadout：BLUE / RED / Observer 使用同一 Room Snapshot', a
     const code = blue.url().match(/[A-HJ-KM-NP-Z2-9]{6}$/)![0]
     await join(red, code, 'Red')
     await join(observer, code, 'Observer', true)
-    await expect(blue.getByText('Red')).toBeVisible({ timeout: 15_000 })
+    await expect(blue.getByText('Red', { exact: true })).toBeVisible({ timeout: 15_000 })
     await blue.getByRole('button', { name: '开始比赛' }).click()
 
     await ninja(blue, '蓝', '漩涡鸣人')

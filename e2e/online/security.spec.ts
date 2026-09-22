@@ -413,7 +413,7 @@ test.describe.serial('v0.3.2 安全加固', () => {
     expect((final.data!.match_state as { history: unknown[] }).history.length).toBe(historyLen + 1)
   })
 
-  test('Pool insufficient：可用忍者不足 → INSUFFICIENT_NINJA_POOL（required/available）', async () => {
+  test('Pool insufficient：可用忍者不足 → INSUFFICIENT_RESOURCE_POOL（resourceType/required/available）', async () => {
     const user = await anonUser()
     // 只给 5 个可用忍者（默认规则需要 22）
     const tinyPool = POOL.slice(0, 5).map((n) => ({ ...n, enabled: true }))
@@ -424,7 +424,8 @@ test.describe.serial('v0.3.2 安全加固', () => {
       pool: tinyPool,
     })
     expect(res.status).toBe(400)
-    expect(res.json.error).toBe('INSUFFICIENT_NINJA_POOL')
+    expect(res.json.error).toBe('INSUFFICIENT_RESOURCE_POOL')
+    expect(res.json.resourceType).toBe('ninjas')
     expect(res.json.required).toBe(22)
     expect(res.json.available).toBe(5)
   })
