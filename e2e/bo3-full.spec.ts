@@ -42,9 +42,10 @@ test('完整 BO3：2:1 结束', async ({ page }) => {
   // ---- Game2：Ban 仍禁用、Game1 出场忍者 USED ----
   await expect(page.getByRole('button', { name: /漩涡鸣人（已禁用）/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /自来也（已使用）/ })).toBeVisible()
-  // 非法点击被拒绝且阶段不变
-  await clickNinja(page, '漩涡鸣人')
-  await expect(page.locator('body')).toContainText('该忍者已被禁用')
+  // 锁定资源在点击前即提供原因，且不会推进阶段
+  const lockedNaruto = page.getByRole('button', { name: /漩涡鸣人（已禁用）/ })
+  await expect(lockedNaruto).toHaveAttribute('aria-disabled', 'true')
+  await expect(lockedNaruto).toHaveAttribute('title', /本局已被禁用/)
   await expect(page.locator('section[aria-live="polite"]')).toContainText('红方选择阶段')
 
   await clickNinja(page, '干柿鬼鲛')

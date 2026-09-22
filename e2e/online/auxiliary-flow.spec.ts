@@ -79,3 +79,36 @@ test('在线 Full Loadout：BLUE / RED / Observer 使用同一 Room Snapshot', a
     await observerContext.close()
   }
 })
+
+test('Presentation View 复用房间状态且始终只读', async ({ browser }) => {
+  const blueContext = await browser.newContext()
+  const redContext = await browser.newContext()
+  const displayContext = await browser.newContext({ viewport: { width: 1920, height: 1080 } })
+  const blue = await blueContext.newPage()
+  const red = await redContext.newPage()
+  const display = await displayContext.newPage()
+  try {
+    await blue.goto('/online')
+    await blue.getByPlaceholder('蓝方玩家').fill('Blue')
+    await blue.getByRole('button', { name: /创建房间/ }).click()
+    await blue.waitForURL(/\/room\/[A-HJ-KM-NP-Z2-9]{6}/)
+    const code = blue.url().match(/[A-HJ-KM-NP-Z2-9]{6}$/)![0]
+    await join(red, code, 'Red')
+    await expect(blue.getByText('Red', { exact: true })).toBeVisible({ timeout: 15_000 })
+    await blue.getByRole('button', { name: '开始比赛' }).click()
+    await display.goto(`/room/${code}/presentation`)
+    await expect(display.getByTestId('presentation-view')).toBeVisible({ timeout: 30_000 })
+    await expect(display.getByText('观战展示 · 只读')).toBeVisible()
+    await expect(display.getByText('CURRENT PHASE')).toBeVisible()
+    await expect(display.getByText('Blue', { exact: true })).toBeVisible()
+    await expect(display.getByText('Red', { exact: true })).toBeVisible()
+    await expect(display.locator('[data-resource-card]')).toHaveCount(0)
+    await expect(display.getByRole('button', { name: /选择|撤销|重置|获胜/ })).toHaveCount(0)
+    const size = await display.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }))
+    expect(size.scroll).toBeLessThanOrEqual(size.client + 1)
+  } finally {
+    await blueContext.close()
+    await redContext.close()
+    await displayContext.close()
+  }
+})
