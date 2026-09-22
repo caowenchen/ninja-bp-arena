@@ -302,7 +302,7 @@ GitHub Pages 部署：在仓库 Settings → Secrets and variables → Actions �
 - 保留 Ninja Only 模式；新增明确标为示例的 `Full Loadout Demo`（每方 3 Ninja / 1 Secret Scroll / 3 Summon）
 - Battle Data Pack v2、v1→v2 migration、分类型 Diff、完整内容 checksum、storage schema v4
 - 本地与在线权威资源快照、历史压缩、辅助资源 Undo/Timer/Result 与 Observer 实时同步
-- 数据库 `0004_auxiliary_resources.sql` 增加 `rooms.resource_snapshot jsonb`
+- 数据库 `0005_auxiliary_resources.sql` 增加 `rooms.resource_snapshot jsonb`；已发布的 `0001`～`0004` 保持不变
 
 数据状态：Ninja / Secret Scroll / Summon 均为 **Demo 示例数据**，不是官方完整数据。
 

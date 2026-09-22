@@ -1,10 +1,8 @@
 -- ============================================================================
--- v0.5.0 compatibility backfill
---
--- Stable v0.4.0 already shipped migration version 0004 under a different
--- filename. Supabase tracks the numeric version, so upgraded databases may
--- legitimately skip the new 0004_auxiliary_resources.sql. Repeat the idempotent
--- schema/function change here so both fresh installs and v0.4 upgrades converge.
+-- v0.5.0 Battle Resource Snapshot
+-- 0001 / 0002 / 0003 / 0004 are published and immutable. Rooms keep the
+-- legacy Ninja pool for safe fallback and store the authoritative
+-- multi-resource snapshot separately.
 -- ============================================================================
 
 alter table public.rooms
@@ -93,6 +91,5 @@ revoke all on function public.create_room_transaction(uuid, text, text, jsonb, j
 revoke all on function public.create_room_transaction(uuid, text, text, jsonb, jsonb, jsonb, jsonb) from authenticated;
 grant execute on function public.create_room_transaction(uuid, text, text, jsonb, jsonb, jsonb, jsonb) to service_role;
 
--- Defaults preserve legacy callers; remove old overloads to avoid ambiguity.
-drop function if exists public.create_room_transaction(uuid, text, text, jsonb, jsonb);
+-- Defaults preserve legacy callers; remove the six-parameter overload to avoid ambiguity.
 drop function if exists public.create_room_transaction(uuid, text, text, jsonb, jsonb, jsonb);

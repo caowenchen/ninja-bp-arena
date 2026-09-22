@@ -306,7 +306,7 @@ begin
     select 1 from information_schema.columns
     where table_schema = 'public' and table_name = 'rooms' and column_name = 'resource_snapshot'
   ) then
-    raise exception 'rooms 缺少 resource_snapshot 列（0004 迁移未应用？）';
+    raise exception 'rooms 缺少 resource_snapshot 列（0005 迁移未应用？）';
   end if;
   select room_id into v_room from public.create_room_transaction(
     gen_random_uuid(), 'BLUE', '资源快照房主', '{"demo":"v5"}'::jsonb,

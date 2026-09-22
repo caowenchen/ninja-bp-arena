@@ -283,7 +283,6 @@ test.describe.serial('v0.3.2 安全加固', () => {
       rule: normalizeRule(),
       pool: POOL,
     })
-    if (created.status !== 200) console.log('DEBUG create:', JSON.stringify(created.json))
     expect(created.status).toBe(200)
     roomA = created.json.roomId as string
     codeA = created.json.code as string
@@ -300,7 +299,6 @@ test.describe.serial('v0.3.2 安全加固', () => {
       expectedRevision: 0,
       type: 'START_MATCH',
     })
-    if (started.status !== 200) console.log('DEBUG START:', JSON.stringify(started.json))
     expect(started.status).toBe(200)
     revisionA = started.json.revision as number
   })
@@ -374,7 +372,6 @@ test.describe.serial('v0.3.2 安全加固', () => {
       type: 'SELECT_NINJA',
       payload: { ninjaId: 'e2e-ninja-01' },
     })
-    if (first.status !== 200) console.log('DEBUG first:', JSON.stringify(first.json))
     expect(first.status).toBe(200)
     const historyLen = (first.json.match as { history: unknown[] }).history.length
 

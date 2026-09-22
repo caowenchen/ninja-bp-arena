@@ -15,9 +15,11 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "check:functions": "deno check --config supabase/functions/deno.json supabase/functions/room-command/index.ts supabase/functions/room-create/index.ts supabase/functions/room-join/index.ts",
+    "check": "npm run check:functions",
     "test:db": "psql \"postgresql://postgres:postgres@127.0.0.1:54322/postgres\" -v ON_ERROR_STOP=1 -f supabase/tests/db-security-verify.sql",
     "test:online": "playwright test --config playwright.online.config.ts",
     "data:validate": "node scripts/data-validate.mjs",
+    "data": "npm run data:validate",
     "data:check": "node scripts/data-validate.mjs",
     "data:build": "node scripts/build-data-pack.mjs"
   },
