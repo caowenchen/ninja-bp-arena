@@ -27,6 +27,7 @@ export const router = createBrowserRouter(
         { path: 'bp', element: <BPPage /> },
         { path: 'online', element: <OnlineHubPage /> },
         { path: 'room/:code', element: <RoomPage /> },
+        { path: 'room/:code/presentation', element: <RoomPage presentation /> },
         { path: 'ninjas', element: <NinjaPoolPage /> },
         { path: 'data', element: <DataPackPage /> },
         { path: 'settings', element: <SettingsPage /> },

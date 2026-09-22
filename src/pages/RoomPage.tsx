@@ -13,12 +13,13 @@ import { useBPStore } from '@/store/bpStore'
 import { useDataPackStore } from '@/dataPack/store'
 import { builtInPack } from '@/dataPack/loader'
 import { BUILT_IN_PACK_ID } from '@/dataPack/types'
+import { PresentationView } from '@/components/presentation/PresentationView'
 
 /** /room/:code —— 在线房间（加入面板 / 等待室 / BP / 结果 / 观战） */
-export default function RoomPage() {
+export default function RoomPage({ presentation = false }: { presentation?: boolean }) {
   const { code = '' } = useParams<{ code: string }>()
   const [searchParams] = useSearchParams()
-  const preferObserver = searchParams.get('watch') === '1'
+  const preferObserver = presentation || searchParams.get('watch') === '1'
 
   const configOk = useOnlineRoomStore((s) => s.configOk)
   const roomStatus = useOnlineRoomStore((s) => s.roomStatus)
@@ -61,6 +62,15 @@ export default function RoomPage() {
       } catch {
         /* 未加入过 → 走加入面板 */
       }
+      if (!cancelled && presentation) {
+        const joined = await joinRoom({ code: roomCodeUpper, seat: 'OBSERVER', displayName: '赛事展示' })
+        if (joined.ok) {
+          setPhase('in-room')
+          inFlight.current = false
+          return
+        }
+        setJoinError(joined.error ?? '无法进入赛事展示')
+      }
       if (!cancelled) {
         setPhase('join-panel')
         inFlight.current = false
@@ -69,7 +79,7 @@ export default function RoomPage() {
     return () => {
       cancelled = true
     }
-  }, [roomCodeUpper, configOk, ensureAuth, enterRoom])
+  }, [roomCodeUpper, configOk, ensureAuth, enterRoom, joinRoom, presentation])
 
   // 离开页面时清理订阅（数据库成员记录保留，刷新/重连可自动恢复席位）
   useEffect(() => () => leaveRoom(), [leaveRoom])
@@ -127,6 +137,14 @@ export default function RoomPage() {
     )
   }
 
+  if (phase === 'in-room' && presentation) {
+    return (
+      <OnlineMatchSource>
+        <PresentationView code={roomCode ?? roomCodeUpper} />
+      </OnlineMatchSource>
+    )
+  }
+
   if (phase === 'in-room' && roomStatus === 'WAITING') {
     return <WaitingRoom code={roomCode ?? roomCodeUpper} />
   }
@@ -136,6 +154,9 @@ export default function RoomPage() {
   }
 
   // 加入面板
+  if (presentation) {
+    return <div className="px-4 py-20 text-center text-sm text-fog-400">无法自动进入赛事展示：{joinError ?? '房间不可用'}</div>
+  }
   return (
     <div className="mx-auto w-full max-w-md px-4 py-16">
       <h1 className="text-lg font-bold text-fog-100">加入房间 {roomCodeUpper}</h1>
@@ -258,6 +279,9 @@ function WaitingRoom({ code }: { code: string }) {
           </button>
           <button type="button" onClick={() => void copy(inviteUrl, '邀请链接')} className="text-fog-500 underline underline-offset-2 hover:text-fog-300">
             复制邀请链接
+          </button>
+          <button type="button" onClick={() => void copy(`${inviteUrl}/presentation`, '赛事展示链接')} className="text-violet-300 underline underline-offset-2 hover:text-violet-200">
+            复制展示链接
           </button>
         </div>
       </div>

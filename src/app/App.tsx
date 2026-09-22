@@ -10,7 +10,7 @@ import { useDataPackStore } from '@/dataPack/store'
 export default function App() {
   const location = useLocation()
   const animationsEnabled = useSettingsStore((s) => s.settings.animationsEnabled)
-  const isBPPage = location.pathname === '/bp'
+  const isFocusedView = location.pathname === '/bp' || location.pathname.endsWith('/presentation')
 
   // v0.4 数据包引导：v2 用户迁移分类 + 激活包与生效池对齐（幂等）；
   // 随后按「每天最多一次」的频率静默检查远程包更新（只提示，不自动应用）
@@ -28,15 +28,15 @@ export default function App() {
   return (
     <div className={`flex min-h-screen flex-col ${animationsEnabled ? '' : 'fx-off'}`}>
       <ErrorBoundary>
-        {!isBPPage && <NavBar />}
+        {!isFocusedView && <NavBar />}
         <div className="flex-1">
           <Outlet />
         </div>
-        <footer className="border-t border-ink-700 px-4 py-4 text-center text-[11px] leading-relaxed text-fog-600">
+        {!isFocusedView && <footer className="border-t border-ink-700 px-4 py-4 text-center text-[11px] leading-relaxed text-fog-600">
           忍界 BP · Ninja BP Arena —— 本工具为玩家制作的非官方赛事 BP 辅助工具，与游戏官方无隶属或合作关系。
           <br className="hidden sm:block" />
           内置忍者与规则均为示例，可自行导入与配置。
-        </footer>
+        </footer>}
       </ErrorBoundary>
       <ToastHost />
     </div>
