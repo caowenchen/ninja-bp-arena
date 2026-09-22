@@ -22,7 +22,7 @@ async function ninja(page: Page, side: '蓝' | '红', name: string) {
   const button = page.getByRole('button', { name: new RegExp(`^${name}（可选）`) })
   await expect(button).toBeVisible({ timeout: 30_000 })
   await button.click()
-  await expect(sidePanel(page, side).getByText(name, { exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(sidePanel(page, side).getByText(name, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
 }
 
 async function resource(page: Page, side: '蓝' | '红', type: '秘卷' | '通灵', name: string) {
