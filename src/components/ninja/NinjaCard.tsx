@@ -37,7 +37,7 @@ export const NinjaCard = memo(function NinjaCard({ ninja, status, onPick, isNew,
   const available = status === 'AVAILABLE' && !disabledReason
   const dimmed = status === 'BANNED' || status === 'USED'
   const reason = status === 'BANNED' ? '本局已被禁用' : status === 'BLUE_PICKED' ? '本局已被蓝方选择' : status === 'RED_PICKED' ? '本局已被红方选择' : status === 'USED' ? '上一小局已使用' : status === 'DISABLED' ? '资源已停用' : '可选择'
-  const tooltip = `${ninja.name} · ${ninja.quality}${ninja.tags.length ? ` · ${ninja.tags.join(' / ')}` : ''} · ${disabledReason ?? reason}${ninja.dataVersion ? ` · 数据 ${ninja.dataVersion}` : ''}`
+  const tooltip = `${ninja.name} · ${ninja.quality}${ninja.tags.length ? ` · ${ninja.tags.join(' / ')}` : ''} · ${reason}${disabledReason ? ` · ${disabledReason}` : ''}${ninja.dataVersion ? ` · 数据 ${ninja.dataVersion}` : ''}`
 
   return (
     <button
@@ -45,7 +45,7 @@ export const NinjaCard = memo(function NinjaCard({ ninja, status, onPick, isNew,
       onClick={() => { if (available) onPick(ninja) }}
       title={tooltip}
       aria-disabled={!available}
-      aria-label={`${ninja.name}（${disabledReason ?? STATUS_LABEL[status]}）`}
+      aria-label={`${ninja.name}（${STATUS_LABEL[status]}）${disabledReason ? `—${disabledReason}` : ''}`}
       data-resource-card
       className={`group relative block w-full overflow-hidden rounded-md border text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-accent ${
         available

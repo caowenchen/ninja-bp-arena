@@ -51,7 +51,7 @@ async function clickNinja(page: Page, name: string, _expectLabel?: string) {
 
 /** 非当前方的卡片必须锁定、说明原因，且点击不能改变比赛状态。 */
 async function expectNinjaLockedForWrongTurn(page: Page, name: string, waitingSide: '蓝' | '红') {
-  const card = page.getByRole('button', { name: `${name}（等待${waitingSide}方选择）` })
+  const card = page.getByRole('button', { name: `${name}（可选）—等待${waitingSide}方选择` })
   await expect(card).toBeVisible({ timeout: 15_000 })
   await expect(card).toHaveAttribute('aria-disabled', 'true')
   await expect(card).toHaveAttribute('title', new RegExp(`等待${waitingSide}方选择`))
