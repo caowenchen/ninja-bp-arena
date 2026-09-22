@@ -18,7 +18,7 @@ function SequenceStrip({ match }: { match: MatchState }) {
           <span
             key={index}
             title={`${SIDE_LABEL[step.side]} ${isBan ? '禁用' : '选择'}${RESOURCE_TYPE_LABEL[step.resourceType]}`}
-            className={`flex h-5 w-7 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${
+            className={`flex h-5 min-w-9 items-center justify-center rounded-sm px-1 text-[9px] font-bold transition-colors ${
               current
                 ? isBan
                   ? 'bg-side-red text-white ring-1 ring-side-red/60'
@@ -30,6 +30,7 @@ function SequenceStrip({ match }: { match: MatchState }) {
                   : 'bg-ink-700 text-fog-600'
             }`}
           >
+            <span className="opacity-70">{step.resourceType === 'NINJA' ? '忍' : step.resourceType === 'SECRET_SCROLL' ? '卷' : '灵'}</span>
             {isBan ? '禁' : '选'}
             <span className="ml-0.5 opacity-70">{step.side === 'BLUE' ? '蓝' : '红'}</span>
           </span>
@@ -108,6 +109,9 @@ export function BPStage({
                 }`}
               >
                 {phase.side === 'BLUE' ? 'BLUE' : 'RED'} {actionEn}
+              </p>
+              <p className="mt-1 text-[10px] font-bold tracking-[0.2em] text-fog-600">
+                {RESOURCE_TYPE_LABEL[phase.resourceType!].toUpperCase()} · {phase.doneInStep + 1} / {phase.stepCount}
               </p>
               <p className="mt-0.5 text-sm font-medium text-fog-100">
                 {timeoutActive ? '操作超时 · 管理员可继续操作' : `${sideText}${isNinja ? '' : resourceLabel}${actionCn} · ${remainText}`}

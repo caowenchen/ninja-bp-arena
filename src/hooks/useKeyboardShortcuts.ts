@@ -8,9 +8,19 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 /** 桌面快捷键：Ctrl/Cmd+Z 撤销，Ctrl+Shift+Z / Ctrl+Y 重做（输入框内不生效） */
-export function useKeyboardShortcuts() {
+export function useKeyboardShortcuts(onEscape?: () => void) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.key === '/' || e.code === 'Slash') && !isTypingTarget(e.target) && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        document.querySelector<HTMLInputElement>('[data-resource-search]')?.focus()
+        return
+      }
+      if (e.key === 'Escape') {
+        onEscape?.()
+        if (isTypingTarget(e.target)) (e.target as HTMLElement).blur()
+        return
+      }
       if (!e.ctrlKey && !e.metaKey) return
       if (isTypingTarget(e.target)) return
       const key = e.key.toLowerCase()
@@ -24,5 +34,5 @@ export function useKeyboardShortcuts() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [onEscape])
 }

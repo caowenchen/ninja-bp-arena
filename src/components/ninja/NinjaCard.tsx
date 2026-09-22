@@ -25,6 +25,7 @@ interface NinjaCardProps {
   onPick: (ninja: Ninja) => void
   /** 数据包更新后 7 天内的新忍者 NEW 徽标 */
   isNew?: boolean
+  disabledReason?: string
 }
 
 /**
@@ -32,21 +33,24 @@ interface NinjaCardProps {
  * 状态只靠 遮罩 / 描边 / 标签 / 透明度 表达，不做花哨背景。
  * React.memo + 引擎统一计算状态，倒计时变化不会引发卡片重渲染。
  */
-export const NinjaCard = memo(function NinjaCard({ ninja, status, onPick, isNew }: NinjaCardProps) {
-  const available = status === 'AVAILABLE'
+export const NinjaCard = memo(function NinjaCard({ ninja, status, onPick, isNew, disabledReason }: NinjaCardProps) {
+  const available = status === 'AVAILABLE' && !disabledReason
   const dimmed = status === 'BANNED' || status === 'USED'
-  const tooltip = `${ninja.name} · ${ninja.quality}${ninja.tags.length ? ` · ${ninja.tags.join(' / ')}` : ''} · ${STATUS_LABEL[status]}${ninja.dataVersion ? ` · 数据 ${ninja.dataVersion}` : ''}`
+  const reason = status === 'BANNED' ? '本局已被禁用' : status === 'BLUE_PICKED' ? '本局已被蓝方选择' : status === 'RED_PICKED' ? '本局已被红方选择' : status === 'USED' ? '上一小局已使用' : status === 'DISABLED' ? '资源已停用' : '可选择'
+  const tooltip = `${ninja.name} · ${ninja.quality}${ninja.tags.length ? ` · ${ninja.tags.join(' / ')}` : ''} · ${disabledReason ?? reason}${ninja.dataVersion ? ` · 数据 ${ninja.dataVersion}` : ''}`
 
   return (
     <button
       type="button"
-      onClick={() => onPick(ninja)}
+      onClick={() => { if (available) onPick(ninja) }}
       title={tooltip}
-      aria-label={`${ninja.name}（${STATUS_LABEL[status]}）`}
-      className={`group relative block w-full overflow-hidden rounded-md border text-left transition-all duration-150 ${
+      aria-disabled={!available}
+      aria-label={`${ninja.name}（${disabledReason ?? STATUS_LABEL[status]}）`}
+      data-resource-card
+      className={`group relative block w-full overflow-hidden rounded-md border text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-accent ${
         available
           ? 'border-border-muted bg-surface-1 hover:z-10 hover:scale-[1.04] hover:border-blue-team/70'
-          : 'border-border-muted/60 bg-surface-1/60'
+          : 'cursor-not-allowed border-border-muted/60 bg-surface-1/60'
       } ${status === 'DISABLED' ? 'opacity-30' : ''}`}
     >
       <div className="relative aspect-[3/4] w-full">

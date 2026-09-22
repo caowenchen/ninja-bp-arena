@@ -35,6 +35,7 @@ import { fileTimestamp } from '@/utils/format'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Dialog } from '@/components/common/Dialog'
 import { toast } from '@/store/toastStore'
+import { resolveAsset } from '@/dataPack/assetResolver'
 
 /**
  * /data —— 数据包管理页。
@@ -108,6 +109,13 @@ export default function DataPackPage() {
   const health: DataHealth = useMemo(() => computeDataHealth(ninjas), [ninjas])
   const required = getMinimumRequiredPoolSize(rule)
   const available = useMemo(() => new Set(ninjas.filter((n) => n.enabled && !n.deprecated).map((n) => n.id)).size, [ninjas])
+  const dataStatus = activePack?.manifest.dataStatus ?? 'COMMUNITY'
+  const assetHealth = useMemo(() => {
+    if (!activePack) return { available: 0, fallback: ninjas.length }
+    const resources = [...activePack.ninjas, ...activePack.secretScrolls, ...activePack.summons]
+    const statuses = resources.map((resource) => resolveAsset(resource, { packManifest: activePack.manifest }))
+    return { available: statuses.filter((item) => item.url).length, fallback: statuses.filter((item) => !item.url).length }
+  }, [activePack, ninjas.length])
 
   const notifyNextMatchOnly = () => {
     const match = useBPStore.getState().match
@@ -226,6 +234,11 @@ export default function DataPackPage() {
 
       {/* 当前数据包状态卡 */}
       <section className="mt-4 rounded-lg border border-border-muted bg-surface-1/50 p-5">
+        {dataStatus === 'DEMO' && (
+          <div data-testid="demo-status" className="mb-4 rounded border border-gold-accent/35 bg-gold-accent/10 px-3 py-2 text-xs text-gold-accent">
+            <strong>DEMO 示例数据</strong> · 当前并非完整游戏名单，请勿视为官方认证数据。
+          </div>
+        )}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-fog-100">{activePack?.manifest.name ?? '自定义忍者数据'}</h2>
@@ -237,6 +250,18 @@ export default function DataPackPage() {
               来源：{SOURCE_LABEL[poolSource]}
               {activePack?.origin === 'URL' && activePack.remoteUrl ? '（远程）' : activePack?.origin === 'FILE' ? '（文件导入）' : ''}
             </p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+              <div className="rounded border border-border-muted p-2"><span className="block text-fog-600">Data Status</span><strong className="text-fog-100">{dataStatus}</strong></div>
+              <div className="rounded border border-border-muted p-2"><span className="block text-fog-600">Version</span><strong className="text-fog-100">{activePack?.manifest.version ?? 'local'}</strong></div>
+              <div className="rounded border border-border-muted p-2"><span className="block text-fog-600">Updated</span><strong className="text-fog-100">{activePack ? new Date(activePack.manifest.updatedAt).toLocaleDateString() : '本地'}</strong></div>
+              <div className="rounded border border-border-muted p-2"><span className="block text-fog-600">Asset Status</span><strong className="text-fog-100">{assetHealth.available} 可用 / {assetHealth.fallback} 占位</strong></div>
+            </div>
+            {activePack?.manifest.sources?.length ? (
+              <div className="mt-3 text-[11px] text-fog-500">
+                <span className="font-semibold text-fog-300">Sources：</span>
+                {activePack.manifest.sources.map((source) => source.url ? <a key={source.id} href={source.url} target="_blank" rel="noreferrer" className="ml-2 underline hover:text-fog-100">{source.label}</a> : <span key={source.id} className="ml-2">{source.label}</span>)}
+              </div>
+            ) : null}
             <p className={`mt-1 flex items-center gap-1 text-xs ${health.ok ? 'text-emerald-400' : 'text-gold-accent'}`}>
               {health.ok ? <CheckCircle2 size={13} /> : null} {health.ok ? '数据完整' : `存在 ${health.duplicateIds.length + health.missingName} 条数据问题`}
             </p>

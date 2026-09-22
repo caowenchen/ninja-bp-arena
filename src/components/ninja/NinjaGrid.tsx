@@ -23,10 +23,11 @@ interface NinjaGridProps {
   match: MatchState
   statusFilter?: StatusFilter
   onPick: (ninja: Ninja) => void
+  disabledReason?: string
 }
 
 /** 忍者选择网格：状态全部由引擎统一计算 */
-export function NinjaGrid({ ninjas, match, statusFilter = 'ALL', onPick }: NinjaGridProps) {
+export function NinjaGrid({ ninjas, match, statusFilter = 'ALL', onPick, disabledReason }: NinjaGridProps) {
   const newIds = useMemo(() => getNewNinjaIds(), [])
   const cards = useMemo(
     () =>
@@ -51,9 +52,23 @@ export function NinjaGrid({ ninjas, match, statusFilter = 'ALL', onPick }: Ninja
   }
 
   return (
-    <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 md:grid-cols-5 2xl:grid-cols-6">
+    <div
+      className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 md:grid-cols-5 2xl:grid-cols-6"
+      role="grid"
+      aria-label="忍者资源列表"
+      onKeyDown={(event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
+        const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-resource-card]')]
+        const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
+        if (current < 0) return
+        const columns = window.innerWidth >= 1536 ? 6 : window.innerWidth >= 768 ? 5 : window.innerWidth >= 640 ? 4 : 3
+        const delta = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' ? -columns : columns
+        const target = buttons[Math.max(0, Math.min(buttons.length - 1, current + delta))]
+        if (target) { event.preventDefault(); target.focus() }
+      }}
+    >
       {cards.map(({ ninja, status }) => (
-        <NinjaCard key={ninja.id} ninja={ninja} status={status} onPick={onPick} isNew={newIds.has(ninja.id)} />
+        <NinjaCard key={ninja.id} ninja={ninja} status={status} onPick={onPick} isNew={newIds.has(ninja.id)} disabledReason={disabledReason} />
       ))}
     </div>
   )

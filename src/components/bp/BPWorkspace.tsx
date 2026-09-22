@@ -28,7 +28,7 @@ import { playSound } from '@/utils/sound'
 import { normalizeForSearch } from '@/utils/format'
 import { CheckCircle2, Hourglass } from 'lucide-react'
 import { ResourceGrid } from '@/components/resource/ResourceGrid'
-import type { DraftResource, DraftResourceType } from '@bp-core'
+import { getResourceDraftRules, RESOURCE_TYPE_LABEL, type DraftResource, type DraftResourceType } from '@bp-core'
 
 const QUALITY_ORDER = { S: 0, A: 1, B: 2, C: 3 } as const
 
@@ -54,7 +54,7 @@ export function BPWorkspace() {
   const [resultOpen, setResultOpen] = useState(false)
   const [timeoutActive, setTimeoutActive] = useState(false)
 
-  useKeyboardShortcuts()
+  useKeyboardShortcuts(() => setSearch(''))
 
   const filteredNinjas = useMemo(() => {
     let pool = ninjas
@@ -89,14 +89,16 @@ export function BPWorkspace() {
   // 计时器：本地模式由客户端持久化 deadline；在线模式使用服务端权威 deadline
   const bpPhase = match ? getPhase(match) : null
   const activeResourceType = bpPhase?.resourceType ?? 'NINJA'
+  const [viewedResourceType, setViewedResourceType] = useState<DraftResourceType>(activeResourceType)
+  useEffect(() => setViewedResourceType(activeResourceType), [activeResourceType])
   const filteredResources = useMemo(() => {
-    if (activeResourceType === 'NINJA') return [] as DraftResource[]
-    const pool = source.matchResources?.[activeResourceType] ?? []
+    if (viewedResourceType === 'NINJA') return [] as DraftResource[]
+    const pool = source.matchResources?.[viewedResourceType] ?? []
     const query = normalizeForSearch(search)
     return pool
       .filter((item) => !query || [item.name, ...(item.aliases ?? []), ...(item.tags ?? [])].some((text) => normalizeForSearch(text).includes(query)))
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name, 'zh-Hans-CN'))
-  }, [activeResourceType, search, source.matchResources])
+  }, [viewedResourceType, search, source.matchResources])
   const inBPNow = bpPhase ? bpPhase.status === 'BANNING' || bpPhase.status === 'PICKING' : false
   useEffect(() => {
     if (!match) return
@@ -183,6 +185,12 @@ export function BPWorkspace() {
 
   const deadlineOverride = isOnline ? (source.onlineDeadline ?? null) : undefined
   const waitingOther = isOnline && inBP && !source.isMyTurn
+  const enabledResourceTypes = getResourceDraftRules(match.rule).filter((rule) => rule.enabled).map((rule) => rule.resourceType)
+  const interactionReason = viewedResourceType !== phase.resourceType
+    ? `当前阶段为${phase.resourceType ? RESOURCE_TYPE_LABEL[phase.resourceType] : '其他资源'}`
+    : !source.canOperate
+      ? source.mySeat === 'OBSERVER' ? '观战模式不可操作' : '当前席位不可操作'
+      : waitingOther ? `等待${phase.side === 'BLUE' ? '蓝方' : '红方'}选择` : undefined
 
   const stage = (
     <BPStage
@@ -195,6 +203,7 @@ export function BPWorkspace() {
       }}
       onTimerExpire={handleTimerExpire}
       deadlineOverride={deadlineOverride}
+      className="sticky top-0 z-20 shadow-lg shadow-arena-bg/40 lg:static lg:shadow-none"
     />
   )
 
@@ -220,10 +229,17 @@ export function BPWorkspace() {
 
             {inBP && (
               <section className="space-y-2">
+                <div className="flex items-center gap-1 rounded-lg border border-border-muted bg-surface-1/60 p-1" role="tablist" aria-label="资源类型">
+                  {enabledResourceTypes.map((type) => (
+                    <button key={type} type="button" role="tab" aria-selected={viewedResourceType === type} onClick={() => setViewedResourceType(type)} className={`flex-1 rounded px-3 py-1.5 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-accent ${viewedResourceType === type ? 'bg-gold-accent text-ink-950' : 'text-fog-400 hover:bg-ink-700'}`}>
+                      {RESOURCE_TYPE_LABEL[type]}{phase.resourceType === type ? ' · 当前' : ''}
+                    </button>
+                  ))}
+                </div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <NinjaSearch value={search} onChange={setSearch} />
-                  {phase.resourceType === 'NINJA' && <NinjaFilter value={quality} onChange={setQuality} />}
-                  {phase.resourceType === 'NINJA' && (
+                  <NinjaSearch value={search} onChange={setSearch} placeholder={`搜索${RESOURCE_TYPE_LABEL[viewedResourceType]}名称、别名或标签…`} />
+                  {viewedResourceType === 'NINJA' && <NinjaFilter value={quality} onChange={setQuality} />}
+                  {viewedResourceType === 'NINJA' && (
                   <div className="flex items-center gap-1 rounded-lg border border-ink-500 bg-ink-800 p-1" role="group" aria-label="状态筛选">
                     {(
                       [
@@ -248,7 +264,7 @@ export function BPWorkspace() {
                     ))}
                   </div>
                   )}
-                  {phase.resourceType === 'NINJA' && (
+                  {viewedResourceType === 'NINJA' && (
                   <select
                     value={settings.ninjaSort}
                     onChange={(e) => useSettingsStore.getState().update({ ninjaSort: e.target.value as 'quality' | 'name' })}
@@ -261,18 +277,22 @@ export function BPWorkspace() {
                   )}
                 </div>
                 <div className={waitingOther ? 'opacity-70' : ''}>
-                  {phase.resourceType === 'NINJA' ? (
+                  {viewedResourceType === 'NINJA' ? (
                     <NinjaGrid
                       ninjas={filteredNinjas}
                       match={match}
                       statusFilter={statusFilter}
                       onPick={(ninja) => handlePick(ninja.id, ninja.name)}
+                      disabledReason={interactionReason}
                     />
                   ) : (
                     <ResourceGrid
                       resources={filteredResources}
-                      resourceType={phase.resourceType ?? 'SECRET_SCROLL'}
-                      onSelect={(resource) => handleResourcePick(phase.resourceType ?? 'SECRET_SCROLL', resource.id, resource.name)}
+                      resourceType={viewedResourceType}
+                      match={match}
+                      canSelect={!interactionReason}
+                      lockedReason={interactionReason}
+                      onSelect={(resource) => handleResourcePick(viewedResourceType, resource.id, resource.name)}
                     />
                   )}
                 </div>
@@ -353,9 +373,14 @@ function OnlineBanners() {
   const phase = getPhase(match)
   const inBP = phase.status === 'BANNING' || phase.status === 'PICKING'
   const pending = source.pendingUndo
+  const connectionLabel = source.connection === 'connected' ? 'CONNECTED · 已连接' : source.connection === 'syncing' ? 'SYNCING · 正在同步' : source.connection === 'reconnecting' ? 'RECONNECTING · 正在重连' : source.connection === 'offline' ? 'DISCONNECTED · 连接已断开' : 'CONNECTING · 正在连接'
 
   return (
     <div className="mx-auto w-full max-w-[1500px] px-2.5 pt-2 lg:px-5">
+      <div className="mb-1.5 flex flex-wrap items-center justify-center gap-2 text-[10px] font-bold tracking-wider">
+        <span className={`rounded border px-2 py-1 ${source.connection === 'connected' ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-400' : source.connection === 'offline' ? 'border-red-team/40 bg-red-team/10 text-red-team-soft' : 'border-gold-accent/40 bg-gold-accent/10 text-gold-accent'}`}>{connectionLabel}</span>
+        {source.mySeat === 'OBSERVER' && <span className="rounded border border-violet-500/40 bg-violet-500/10 px-2 py-1 text-violet-300">观战模式 · 只读</span>}
+      </div>
       {source.isMyTurn && inBP && source.canOperate && (
         <div className="flex items-center justify-center gap-1.5 rounded border border-gold-accent/40 bg-gold-accent/10 py-1.5 text-xs font-bold text-gold-accent">
           <CheckCircle2 size={13} /> 轮到你操作（{source.mySeat === 'BLUE' ? '蓝方' : '红方'}）
@@ -363,7 +388,7 @@ function OnlineBanners() {
       )}
       {inBP && !source.isMyTurn && !pending && (
         <div className="flex items-center justify-center gap-1.5 rounded border border-border-muted bg-surface-1/60 py-1.5 text-xs text-fog-500">
-          <Hourglass size={12} className="animate-pulse" /> 等待对方选择……
+          <Hourglass size={12} className="animate-pulse" /> 等待{phase.side === 'BLUE' ? '蓝方' : '红方'}选择……
         </div>
       )}
       {pending && pending.requestedByUserId === source.myUserId && (

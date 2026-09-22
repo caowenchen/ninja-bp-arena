@@ -47,12 +47,12 @@ export function MobileTeamBar({ match }: MobileTeamBarProps) {
   }
 
   return (
-    <div className="lg:hidden">
+    <div className="fixed inset-x-2 bottom-12 z-30 lg:hidden">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        className="flex w-full items-center gap-2 rounded-lg border border-border-muted bg-surface-1/70 px-3 py-2.5"
+        className="flex w-full items-center gap-2 rounded-lg border border-border-muted bg-ink-900/95 px-3 py-2.5 shadow-xl backdrop-blur"
       >
         {miniSide('BLUE')}
         <span className="text-sm font-black italic text-fog-600">VS</span>
@@ -64,7 +64,7 @@ export function MobileTeamBar({ match }: MobileTeamBarProps) {
         )}
       </button>
       {expanded && (
-        <div className="mt-2 grid grid-cols-2 gap-2">
+        <div className="mt-2 grid max-h-[55vh] grid-cols-2 gap-2 overflow-y-auto rounded-lg bg-arena-bg/95 p-2 shadow-2xl">
           <PlayerPanel side="BLUE" />
           <PlayerPanel side="RED" />
         </div>

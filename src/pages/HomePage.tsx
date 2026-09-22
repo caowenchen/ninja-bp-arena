@@ -21,6 +21,7 @@ export default function HomePage() {
 
   const [setupOpen, setSetupOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<MatchState | null>(null)
+  const [historySearch, setHistorySearch] = useState('')
 
   // v0.4 低干扰更新提示：内置包随应用更新 / 远程包发现新版本（不弹 Modal）
   const builtinNotice = getBuiltinUpdateNotice()
@@ -33,6 +34,16 @@ export default function HomePage() {
     () => (currentMatch && currentMatch.status !== 'MATCH_FINISHED' ? currentMatch : null),
     [currentMatch],
   )
+  const visibleMatches = useMemo(() => {
+    const query = historySearch.trim().toLocaleLowerCase()
+    if (!query) return recentMatches
+    return recentMatches.filter((match) => [
+      match.bluePlayerName,
+      match.redPlayerName,
+      formatDateTime(match.updatedAt),
+      match.dataPack?.packVersion ?? '',
+    ].some((value) => value.toLocaleLowerCase().includes(query)))
+  }, [historySearch, recentMatches])
 
   const handleContinue = (id: string) => {
     const match = continueMatch(id)
@@ -135,14 +146,17 @@ export default function HomePage() {
 
       {/* 最近比赛：降低视觉优先级 */}
       <section className="mt-10">
-        <h2 className="mb-3 text-xs font-bold tracking-[0.25em] text-fog-600">最近比赛</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-xs font-bold tracking-[0.25em] text-fog-600">最近比赛</h2>
+          <input type="search" value={historySearch} onChange={(event) => setHistorySearch(event.target.value)} placeholder="搜索玩家、日期或数据版本" aria-label="搜索历史记录" className="w-full rounded border border-border-muted bg-ink-900 px-3 py-1.5 text-xs text-fog-200 sm:w-64" />
+        </div>
         {recentMatches.length === 0 ? (
           <p className="rounded border border-dashed border-border-strong py-8 text-center text-sm text-fog-600">
             还没有比赛记录
           </p>
         ) : (
           <ul className="divide-y divide-border-muted rounded border border-border-muted">
-            {recentMatches.map((m) => (
+            {visibleMatches.map((m) => (
               <li key={m.id} className="flex flex-wrap items-center gap-3 bg-surface-1/40 px-4 py-2.5">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-fog-100">
@@ -152,7 +166,7 @@ export default function HomePage() {
                     </span>
                     <span className="text-red-team-soft">{m.redPlayerName}</span>
                   </p>
-                  <p className="mt-0.5 text-[11px] text-fog-600">{formatDateTime(m.updatedAt)}</p>
+                  <p className="mt-0.5 text-[11px] text-fog-600">{formatDateTime(m.updatedAt)}{m.dataPack?.packVersion ? ` · Pack ${m.dataPack.packVersion}` : ''}</p>
                 </div>
                 <span
                   className={`text-[11px] font-bold ${
