@@ -3,7 +3,7 @@
 > Ninja BP Arena —— 玩家制作的非官方赛事 BP 辅助工具。
 > **本工具与游戏官方无隶属或合作关系**；内置忍者数据与规则均为示例，不代表官方名单或官方规则。
 
-一款玩家制作的通用资源 Ban/Pick 模拟器：v0.5 可配置 Ninja（忍者）+ Secret Scroll（秘卷）+ Summon（通灵），本地模式纯前端离线可用；在线房间基于 Supabase（服务端权威 + Realtime 同步）。
+一款玩家制作的通用资源 Ban/Pick 模拟器：v0.6 提供可维护的数据生产流水线、产品化 BP 工作区与只读赛事展示；本地模式纯前端离线可用，在线房间基于 Supabase（服务端权威 + Realtime 同步）。
 
 **在线使用**：https://caowenchen.github.io/ninja-bp-arena/ （GitHub Pages 自动部署）
 
@@ -26,6 +26,7 @@
 - **忍者池管理**：增删改查、批量启用/停用/删除、品质/系列/标签筛选、可插拔头像素材与加载失败占位
 - **数据备份**：一键导出全部本地数据（ninja-bp-backup.json），恢复前显示内容摘要
 - **其他**：最近 20 场比赛、键盘快捷键（Ctrl+Z / Ctrl+Y）、错误边界、prefers-reduced-motion 支持
+- **赛事展示**：`/room/:code/presentation` 只读 16:9 视图，显示比分、阶段、计时与双方阵容
 
 ## 技术栈
 
@@ -56,7 +57,8 @@ src/
 ├── types/          # Ninja / BattleRule / MatchState 等类型
 ├── hooks/          # 键盘快捷键
 └── utils/          # storage（schema v4 封装）、clipboard、importExport（导入/备份）、sound
-data/packs/default/ # 内置 Demo Data Pack：manifest / ninjas / CHANGELOG
+data/source/        # 三类 CSV、Source manifest 与 Stable ID Registry
+data/packs/default/ # 从 Source 确定性生成的内置 Demo Data Pack
 docs/DATA_PACK.md   # 数据包制作、版本、远程托管与素材规范
 e2e/                # Playwright E2E（BO3 全流程 / 撤销 / 刷新恢复 / 移动端 / 坏数据）
 test/               # 单元测试（engine / importExport / validation）
@@ -80,7 +82,8 @@ npm run dev        # 开发：http://localhost:5173
 | `npm run test:db` | 数据库 RLS 安全测试（需 Local Supabase 运行中） |
 | `npm run test:online` | 在线集成 E2E（完整 BO3 / 权限 / RLS attack；**Supabase 不可用时直接失败**） |
 | `npm run data:validate` | 校验内置 Data Pack 的 schema、ID、数量与 checksum |
-| `npm run data:build` | 可选：从 `data/source/ninjas.csv` 构建内置 Data Pack |
+| `npm run data:build` | 从三类 Source CSV 确定性生成 Pack、checksum 与 Diff |
+| `npm run data:audit` | 审计 Stable ID、删除/改名、冲突、素材键与生成文件 |
 | `npm run build` | 生产构建（含类型检查） |
 | `npm run build:pages` | GitHub Pages 构建（子路径 base + 404.html 兜底） |
 
@@ -295,6 +298,16 @@ GitHub Pages 部署：在仓库 Settings → Secrets and variables → Actions �
 - 在线模式的撤销 = 撤销最后一步 Ban/Pick，且需对方确认（本地模式撤销能力更强）
 - 胜负记录/进入下一局/重置 仅房主可执行（防双提交），后续可加双方确认
 
+
+## v0.6.0 Production Data Workflow + BP UX Productization
+
+- Source → normalize → validate → build → checksum → diff 的确定性数据流水线
+- Stable ID Registry 与 `data:audit`，阻止跨类型冲突、意外删除和未经审查的改名
+- Pack 数据状态/来源、轻量 Asset Pack、统一素材健康与安全 fallback
+- 阶段 Hero、Draft Timeline、资源标签页、搜索/筛选、卡片状态和键盘操作
+- 移动 Team Sheet、在线连接/等待/观战状态及只读 Presentation View
+
+默认包保持 `DEMO`。`VERIFIED` 仅表示维护者依据列出的来源核验过，不表示游戏官方认证。维护流程见 [`docs/DATA_MAINTENANCE.md`](docs/DATA_MAINTENANCE.md)。
 
 ## v0.5.0 Generic Resource Draft Framework
 

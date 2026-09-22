@@ -1,6 +1,6 @@
 # Battle Data Pack v2
 
-Battle Data Pack 是 Ninja BP Arena v0.5 的纯数据包格式，可同时提供 Ninja（忍者）、Secret Scroll（秘卷）与 Summon（通灵）。它不依赖图片素材即可工作。仓库内置资源全部是 Demo 示例，不是官方完整数据库。
+Battle Data Pack 是 Ninja BP Arena v0.6 的纯数据包格式，可同时提供 Ninja（忍者）、Secret Scroll（秘卷）与 Summon（通灵）。它不依赖图片素材即可工作。仓库内置资源全部是 Demo 示例，不是官方完整数据库。
 
 ## 目录与 Bundle
 
@@ -48,6 +48,8 @@ v1 Ninja-only Bundle 仍可导入。导入器会把缺失的 `secretScrolls` / `
 | `secretScrollCount` / `summonCount` | v2 是 | 分别等于对应数组长度 |
 | `checksum` | 否 | 完整有效内容的 `sha256:<hex>` |
 | `assetBaseUrl` | 否 | HTTPS 地址或站点绝对路径 |
+| `dataStatus` | 否 | `DEMO` / `COMMUNITY` / `VERIFIED` |
+| `sources` | 否 | 真实来源的 `id`、`label`、可选 HTTPS URL 与核验日期 |
 
 checksum 覆盖规范化后的 `{ ninjas, secretScrolls, summons }`，不是只覆盖 Ninja。远程更新按“下载 → schema/数量/ID 校验 → checksum → 分类型 Diff 预览 → 用户确认 → 原子安装”执行。
 
@@ -65,6 +67,10 @@ checksum 覆盖规范化后的 `{ ninjas, secretScrolls, summons }`，不是只�
 
 v2 远程目录把 `manifest.json`、`ninjas.json`、`secret-scrolls.json` 与 `summons.json` 放在同一 HTTPS 目录。v1 远程包只需要前两个文件。请求有超时和大小限制；校验失败时旧包保持不变。
 
+## Asset Pack
+
+素材包与数据包独立，只需要轻量 manifest：`id`、`version`、`baseUrl` 和可选 `overrides`（Stable Resource ID → URL）。统一 Resolver 按“用户覆盖 → Asset Pack → 资源显式素材 → Data Pack `assetBaseUrl + assetKey` → 占位图”解析。无素材、非法 URL、损坏 assetKey 或加载失败都只影响图片展示，不影响 BP；所有 `data:` / Base64 图片继续被拒绝。
+
 ## 在线与历史
 
 本地比赛在创建时固化完整 Battle Resource Snapshot。在线房间把相同快照写入 `rooms.resource_snapshot`，BLUE、RED 与 Observer 都只使用房间权威快照。旧房间仍从 `rooms.pool` 安全回退。
@@ -78,6 +84,10 @@ v2 远程目录把 `manifest.json`、`ninjas.json`、`secret-scrolls.json` 与 `
 - Summon：Demo
 
 这些数据只用于功能演示与测试，不代表当前游戏版本、官方规则或官方完整名单。项目不会爬取腾讯网站、逆向 APK、解包游戏资源或自动抓取官方美术素材。
+
+`VERIFIED` 只表示项目维护者依据 manifest 中列出的来源核验过，不代表腾讯或游戏官方认证。资源可选以 `sourceRefs` 引用少数例外来源；通常优先使用 Pack 级来源。
+
+默认包由 `data/source/` 生成。Stable ID、删除保护、改名审查、Diff 与发布步骤见 [DATA_MAINTENANCE.md](DATA_MAINTENANCE.md)。
 
 ## 校验
 

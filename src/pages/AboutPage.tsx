@@ -19,7 +19,7 @@ export default function AboutPage() {
           一款支持 Ninja、Secret Scroll 与 Summon 的通用资源 Ban/Pick 模拟器：完整 BO3 流程、配置化规则、
           撤销与复盘、Battle Data Pack v2。本地模式数据保存在浏览器（localStorage），完全离线可用；
           在线 BP 房间基于 Supabase（Anonymous Auth + 服务端权威状态 + Realtime 同步），
-          需要部署方自行配置 Supabase 项目。
+          需要部署方自行配置 Supabase 项目。在线房间还提供只读赛事展示 URL，适合 16:9 投影或 OBS Browser Source。
         </p>
 
         <p className="rounded border border-gold-accent/30 bg-gold-accent/5 p-3 text-xs text-gold-accent">
