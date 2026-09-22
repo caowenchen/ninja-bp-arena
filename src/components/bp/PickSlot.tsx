@@ -36,7 +36,7 @@ export function PickSlot({ ninja, order, side }: PickSlotProps) {
       className={`slot-in relative aspect-[3/4] w-full overflow-hidden rounded border bg-surface-1 ${edge}`}
       title={ninja.name}
     >
-      <NinjaAvatar name={ninja.name} avatar={ninja.avatar} className="h-[74%] w-full" textClassName="text-2xl" />
+      <NinjaAvatar name={ninja.name} avatar={ninja.avatar} assetKey={ninja.assetKey} className="h-[74%] w-full" textClassName="text-2xl" />
       <div className="flex h-[26%] items-center justify-center px-0.5">
         <span className="line-clamp-2 break-all text-center text-[10px] leading-tight text-fog-100">{ninja.name}</span>
       </div>

@@ -60,6 +60,8 @@ export function NinjaAvatar({ name, avatar, assetKey, alt, className = '', textC
       <img
         src={resolved}
         alt={alt ?? name}
+        width={256}
+        height={256}
         loading="lazy"
         decoding="async"
         className="h-full w-full object-cover"

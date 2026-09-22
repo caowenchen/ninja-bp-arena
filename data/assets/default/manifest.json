@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "ninja-bp-assets-placeholder",
+  "name": "Placeholder Asset Pack",
+  "version": "1.0.0",
+  "baseUrl": "/assets/ninjas/",
+  "overrides": {}
+}

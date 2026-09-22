@@ -17,7 +17,7 @@ export function BanSlot({ ninja }: BanSlotProps) {
   return (
     <div className="flex w-10 flex-col items-center gap-0.5" title={`${ninja.name}（已被禁用）`}>
       <div className="relative h-12 w-10 overflow-hidden rounded border border-red-team/50">
-        <NinjaAvatar name={ninja.name} avatar={ninja.avatar} className="h-full w-full opacity-45 saturate-0" textClassName="text-base" />
+        <NinjaAvatar name={ninja.name} avatar={ninja.avatar} assetKey={ninja.assetKey} className="h-full w-full opacity-45 saturate-0" textClassName="text-base" />
         <div className="ban-slash absolute inset-0" />
         <span className="absolute inset-x-0 bottom-0 bg-red-team/90 text-center text-[8px] font-bold tracking-widest text-white">
           BAN
