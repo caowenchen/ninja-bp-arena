@@ -49,10 +49,14 @@ async function clickNinja(page: Page, name: string, _expectLabel?: string) {
   }).toPass({ timeout: 45000 })
 }
 
-/** 故意点错方的原始点击：不等待状态变化，仅断言拒绝 Toast */
-async function clickNinjaWrongTurn(page: Page, name: string) {
-  await page.getByRole('button', { name: new RegExp(`^${name}（可选）`) }).click()
-  await expect(page.locator('body')).toContainText('等待对方选择……', { timeout: 10000 })
+/** 非当前方的卡片必须锁定、说明原因，且点击不能改变比赛状态。 */
+async function expectNinjaLockedForWrongTurn(page: Page, name: string, waitingSide: '蓝' | '红') {
+  const card = page.getByRole('button', { name: `${name}（等待${waitingSide}方选择）` })
+  await expect(card).toBeVisible({ timeout: 15_000 })
+  await expect(card).toHaveAttribute('aria-disabled', 'true')
+  await expect(card).toHaveAttribute('title', new RegExp(`等待${waitingSide}方选择`))
+  await card.click()
+  await expect(card).toBeVisible()
 }
 
 async function clickButton(page: Page, text: string) {
@@ -97,8 +101,8 @@ test.describe.serial('在线 BO3 全流程', () => {
     await expect(red.locator('main').getByText('李四').first()).toBeVisible({ timeout: 10000 })
   })
 
-  test('回合权限：红方在蓝方回合被拒，蓝方正常 Ban', async () => {
-    await clickNinjaWrongTurn(red, '漩涡鸣人')
+  test('回合权限：红方在蓝方回合被锁定，蓝方正常 Ban', async () => {
+    await expectNinjaLockedForWrongTurn(red, '漩涡鸣人', '蓝')
     await clickNinja(blue, '漩涡鸣人', '已禁用')
     await expect(blue.getByRole('button', { name: /漩涡鸣人（已禁用）/ })).toBeVisible({ timeout: 15000 })
     // 三端实时同步
@@ -114,7 +118,7 @@ test.describe.serial('在线 BO3 全流程', () => {
     await red.getByRole('button', { name: '接受' }).click()
     // 双方同时回退：漩涡鸣人重新可选
     await expect(blue.getByRole('button', { name: /漩涡鸣人（可选）/ })).toBeVisible({ timeout: 15000 })
-    await expect(red.getByRole('button', { name: /漩涡鸣人（可选）/ })).toBeVisible({ timeout: 15000 })
+    await expectNinjaLockedForWrongTurn(red, '漩涡鸣人', '蓝')
 
     // 再执行不同忍者
     await clickNinja(blue, '宇智波佐助', '已禁用')
