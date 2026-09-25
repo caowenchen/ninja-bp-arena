@@ -180,10 +180,10 @@ export default function HomePage() {
                 <div className="flex gap-1.5">
                   {m.status === 'MATCH_FINISHED' ? (
                     <Link
-                      to={`/result/${m.id}`}
+                      to={`/replay/${m.id}`}
                       className="rounded border border-border-strong px-2.5 py-1 text-xs text-fog-300 transition-colors hover:bg-surface-2"
                     >
-                      结果
+                      复盘
                     </Link>
                   ) : (
                     <button

@@ -7,6 +7,7 @@ import { useBPStore } from '@/store/bpStore'
 const NAV_ITEMS = [
   { to: '/', label: '首页' },
   { to: '/online', label: '在线 BP' },
+  { to: '/history', label: '比赛档案' },
   { to: '/ninjas', label: '忍者池', icon: ScrollText },
   { to: '/data', label: '数据包', icon: Database },
   { to: '/settings', label: '规则设置', icon: Settings },

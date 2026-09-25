@@ -365,6 +365,7 @@ function WaitingRoom({ code }: { code: string }) {
 
 function OnlineRoomBody({ code }: { code: string }) {
   const roomCode = useOnlineRoomStore((s) => s.roomCode) ?? code
+  const roomId = useOnlineRoomStore((s) => s.roomId)
   const connection = useOnlineRoomStore((s) => s.connection)
   const roomStatus = useOnlineRoomStore((s) => s.roomStatus)
   const isHost = useOnlineRoomStore((s) => s.isHost)
@@ -382,8 +383,8 @@ function OnlineRoomBody({ code }: { code: string }) {
 
   const saveToLocal = () => {
     if (!match) return
-    useBPStore.getState().saveExternalMatch(match)
-    toast('已保存到「最近比赛」，可在首页查看与复盘', 'success')
+    useBPStore.getState().saveExternalMatch(match, roomId ?? undefined)
+    toast('Replay 已保存，可打开、导出或生成分享链接', 'success')
   }
 
   const connectionText =
@@ -414,7 +415,7 @@ function OnlineRoomBody({ code }: { code: string }) {
             onClick={saveToLocal}
             className="flex items-center gap-1 rounded border border-gold-accent/40 px-2 py-0.5 text-xs text-gold-accent hover:bg-gold-accent/10"
           >
-            <Save size={12} /> 保存到本地
+            <Save size={12} /> 保存 Replay
           </button>
         )}
         {isHost && (

@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
-import { Copy, Download, Trophy } from 'lucide-react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Copy, Download, Play, Share2, Trophy } from 'lucide-react'
 import type { MatchState } from '@/types/match'
 import { SIDE_TEXT } from '@/types/bp'
 import { buildShareText, groupHistoryByGame } from '@/engine/historyEngine'
@@ -8,15 +10,22 @@ import { useNinjaLookup, useResourceLookup } from '@/hooks/useNinjaLookup'
 import { copyToClipboard, downloadTextFile } from '@/utils/clipboard'
 import { fileTimestamp, formatTime } from '@/utils/format'
 import { toast } from '@/store/toastStore'
+import { downloadReplay, useReplayStore } from '@/replay/replayStore'
+import { ShareReplayDialog } from '@/components/replay/ShareReplayDialog'
+import type { ReplaySource } from '@bp-core'
 
 interface MatchResultProps {
   match: MatchState
   /** 额外操作按钮（重新开始 / 返回首页等） */
   extraActions?: ReactNode
+  replaySource?: ReplaySource
+  roomId?: string
 }
 
 /** 完整赛果展示：BP 页结束态与 /result/:id 页共用 */
-export function MatchResult({ match, extraActions }: MatchResultProps) {
+export function MatchResult({ match, extraActions, replaySource = 'LOCAL', roomId }: MatchResultProps) {
+  const navigate = useNavigate()
+  const [shareOpen, setShareOpen] = useState(false)
   const { nameOf } = useNinjaLookup(match)
   const resourceNameOf = useResourceLookup(match)
   const finished = match.status === 'MATCH_FINISHED'
@@ -34,6 +43,8 @@ export function MatchResult({ match, extraActions }: MatchResultProps) {
     )
     toast('比赛 JSON 已导出', 'success')
   }
+
+  const ensureReplay = () => useReplayStore.getState().saveFromMatch(match, replaySource, roomId)
 
   return (
     <section className="rounded-xl border border-ink-600 bg-ink-800/70 p-5 lg:p-8">
@@ -159,8 +170,14 @@ export function MatchResult({ match, extraActions }: MatchResultProps) {
         >
           <Download size={14} /> 导出 JSON
         </button>
+        {finished && <>
+          <button type="button" onClick={() => { const replay = ensureReplay(); if (replay) navigate(`/replay/${replay.replayId}`) }} className="flex items-center gap-1.5 rounded bg-blue-team px-4 py-2 text-sm font-bold text-white"><Play size={14} /> 复盘</button>
+          <button type="button" onClick={() => { const replay = ensureReplay(); if (replay) { downloadReplay(replay); toast('Replay JSON 已导出', 'success') } }} className="flex items-center gap-1.5 rounded border border-blue-team/50 px-4 py-2 text-sm text-blue-team-soft"><Download size={14} /> 导出复盘</button>
+          <button type="button" onClick={() => { if (ensureReplay()) setShareOpen(true) }} className="flex items-center gap-1.5 rounded border border-gold-accent/50 px-4 py-2 text-sm text-gold-accent"><Share2 size={14} /> 分享</button>
+        </>}
         {extraActions}
       </div>
+      {finished && (() => { const replay = useReplayStore.getState().get(match.id); return replay ? <ShareReplayDialog replay={replay} open={shareOpen} onClose={() => setShareOpen(false)} /> : null })()}
     </section>
   )
 }

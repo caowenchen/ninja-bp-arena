@@ -91,4 +91,18 @@ test('完整 BO3：2:1 结束', async ({ page }) => {
   await expect(page.getByRole('button', { name: '重新开始' })).toBeVisible()
   // 阶段文本不再是进行中
   expect(await phaseText(page)).not.toContain('阶段')
+
+  // v0.7：完成比赛自动形成只读 Replay，可逐步、跳局、重置并重建最终比分
+  await page.getByRole('button', { name: '复盘', exact: true }).click()
+  await expect(page).toHaveURL(/\/replay\/replay-/)
+  await expect(page.getByText(/Step 0\//)).toBeVisible()
+  await page.getByRole('button', { name: '下一步' }).click()
+  await expect(page.getByText(/Step 1\//)).toBeVisible()
+  await page.getByRole('button', { name: 'GAME 2', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'GAME 2' })).toBeVisible()
+  await page.getByRole('button', { name: '重置复盘' }).click()
+  await expect(page.getByText(/Step 0\//)).toBeVisible()
+  await page.keyboard.press('End')
+  await expect(page.getByText('最终比分 2 : 1 · BLUE 胜')).toBeVisible()
+  await expect(page.getByRole('button', { name: /进入比赛|获胜|选择/ })).toHaveCount(0)
 })

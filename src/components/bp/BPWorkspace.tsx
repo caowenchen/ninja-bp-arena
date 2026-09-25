@@ -318,6 +318,8 @@ export function BPWorkspace() {
             {match.status === 'MATCH_FINISHED' && (
               <MatchResult
                 match={match}
+                replaySource={isOnline ? 'ONLINE' : 'LOCAL'}
+                roomId={isOnline ? useOnlineRoomStore.getState().roomId ?? undefined : undefined}
                 extraActions={
                   <button
                     type="button"

@@ -9,6 +9,9 @@ import ResultPage from '@/pages/ResultPage'
 import AboutPage from '@/pages/AboutPage'
 import OnlineHubPage from '@/pages/OnlineHubPage'
 import RoomPage from '@/pages/RoomPage'
+import HistoryPage from '@/pages/HistoryPage'
+import ReplayPage from '@/pages/ReplayPage'
+import SharedReplayPage from '@/pages/SharedReplayPage'
 
 /**
  * GitHub Pages 项目页部署时 Vite base 为 /ninja-bp-arena/，
@@ -32,6 +35,9 @@ export const router = createBrowserRouter(
         { path: 'data', element: <DataPackPage /> },
         { path: 'settings', element: <SettingsPage /> },
         { path: 'result/:id', element: <ResultPage /> },
+        { path: 'history', element: <HistoryPage /> },
+        { path: 'replay/:id', element: <ReplayPage /> },
+        { path: 'share/:token', element: <SharedReplayPage /> },
         { path: 'about', element: <AboutPage /> },
         { path: '*', element: <Navigate to="/" replace /> },
       ],
