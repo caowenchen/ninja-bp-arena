@@ -1,7 +1,7 @@
 {
   "name": "ninja-bp-arena",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "忍界 BP · 火影忍者手游武斗赛 BP 模拟器（玩家制作的非官方工具）",
   "scripts": {
@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "check:functions": "deno check --config supabase/functions/deno.json supabase/functions/room-command/index.ts supabase/functions/room-create/index.ts supabase/functions/room-join/index.ts",
+    "check:functions": "deno check --config supabase/functions/deno.json supabase/functions/room-command/index.ts supabase/functions/room-create/index.ts supabase/functions/room-join/index.ts supabase/functions/replay-publish/index.ts supabase/functions/replay-get/index.ts supabase/functions/replay-revoke/index.ts",
     "check": "npm run check:functions",
     "test:db": "psql \"postgresql://postgres:postgres@127.0.0.1:54322/postgres\" -v ON_ERROR_STOP=1 -f supabase/tests/db-security-verify.sql",
     "test:online": "playwright test --config playwright.online.config.ts",

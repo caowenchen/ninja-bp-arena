@@ -3,7 +3,7 @@
 > Ninja BP Arena —— 玩家制作的非官方赛事 BP 辅助工具。
 > **本工具与游戏官方无隶属或合作关系**；内置忍者数据与规则均为示例，不代表官方名单或官方规则。
 
-一款玩家制作的通用资源 Ban/Pick 模拟器：v0.6 提供可维护的数据生产流水线、产品化 BP 工作区与只读赛事展示；本地模式纯前端离线可用，在线房间基于 Supabase（服务端权威 + Realtime 同步）。
+一款玩家制作的通用资源 Ban/Pick 模拟器：v0.7 提供版本化 BP Replay、比赛档案、导入导出和显式只读分享链接；本地模式纯前端离线可用，在线房间与分享基于 Supabase。
 
 **在线使用**：https://caowenchen.github.io/ninja-bp-arena/ （GitHub Pages 自动部署）
 
@@ -18,7 +18,9 @@
 - **状态机驱动的 BP 引擎**：当前 Game / 阶段 / 行动方 / 步骤剩余数量全部由引擎推导，支持任意自定义序列
 - **可恢复倒计时**：以「阶段标识 + 截止时间戳」持久化；同一序列步骤共用一份时间；刷新后恢复真实剩余时间，已过期进入超时态（不代选，提供继续选择 / 重新计时）
 - **撤销 / 重做**：基于完整状态快照，可跨过「记录胜负」「进入下一局」回退，撤销后计时器正确对齐新阶段
-- **数据可靠性**：所有 localStorage 读取经过严格运行时校验（schema v4 + 版本迁移），损坏数据自动丢弃回退，绝不白屏
+- **数据可靠性**：所有 localStorage 读取经过严格运行时校验（schema v5 + 版本迁移），损坏数据自动丢弃回退，绝不白屏
+- **BP Replay 与比赛档案**：紧凑 snapshot + action timeline，只读逐步回放、Game 跳转、0.5×/1×/2×、键盘控制，旧 History 动态兼容
+- **导入、导出与分享**：versioned JSON bundle + SHA-256 完整性校验；用户显式发布高熵 token 的公开只读链接，可匿名玩家名并手动撤销
 - **历史记录**：按 Game 分组的完整操作流水 + 赛果纯文本复制 + 比赛 JSON 导出
 - **赛事版式 BP 页**：桌面「蓝方阵容 | 中央阶段与忍者池 | 红方阵容」对阵结构，大头像人物卡槽位；手机 375px 单列 + sticky 底栏（含 safe-area）
 - **Battle Data Pack v2**：同包管理 Ninja / Secret Scroll / Summon，兼容 v1 Ninja-only Pack；更新检查、分类型 Diff、全内容 checksum 与原子安装
@@ -56,7 +58,7 @@ src/
 ├── data/           # 默认规则模板（忍者数据位于仓库根 data/packs/default）
 ├── types/          # Ninja / BattleRule / MatchState 等类型
 ├── hooks/          # 键盘快捷键
-└── utils/          # storage（schema v4 封装）、clipboard、importExport（导入/备份）、sound
+└── utils/          # storage（schema v5 封装）、clipboard、importExport（导入/备份）、sound
 data/source/        # 三类 CSV、Source manifest 与 Stable ID Registry
 data/packs/default/ # 从 Source 确定性生成的内置 Demo Data Pack
 docs/DATA_PACK.md   # 数据包制作、版本、远程托管与素材规范
@@ -96,7 +98,7 @@ npm run dev        # 开发：http://localhost:5173
 直接访问 `/bp`、`/ninjas` 等子路径刷新由 `dist/404.html`（index.html 副本）兜底，
 React Router 以 `/ninja-bp-arena` 为 basename 接管路由，不会 404。
 
-## 数据结构（localStorage，schema v4）
+## 数据结构（localStorage，schema v5）
 
 | Key | 内容 |
 | --- | --- |
@@ -110,8 +112,9 @@ React Router 以 `/ninja-bp-arena` 为 basename 接管路由，不会 404。
 | `ninja-bp.installed_data_packs` | 已安装的文件或远程 Data Pack |
 | `ninja-bp.data_pack_update_state` | 更新检查时间、待确认版本与 NEW 徽标状态 |
 | `ninja-bp.custom_ninja_pool` | 最近一次用户自定义池，切换数据包后仍可恢复 |
+| `ninja-bp.replay_library` | 独立 Replay Library 与用户主动创建的分享记录 |
 
-所有值以 `{ __v: 3, data: ... }` 包装存储；旧版（无包装）数据按 v1 自动迁移。
+所有值以 `{ __v: 5, data: ... }` 包装存储；旧版（含无包装数据）惰性迁移并保留。
 所有读取经过 `matchValidator` 严格校验，损坏数据 warn + 回退。
 
 ## 核心类型
@@ -240,9 +243,12 @@ supabase db push           # 应用 supabase/migrations/ 下的全部迁移
 supabase functions deploy room-create
 supabase functions deploy room-join
 supabase functions deploy room-command
+supabase functions deploy replay-publish
+supabase functions deploy replay-get --no-verify-jwt
+supabase functions deploy replay-revoke
 ```
 
-三个函数共用 `supabase/functions/_shared/bp-core`（Shared BP Core，与浏览器完全同一套 BP 逻辑），服务端权威：
+房间和 Replay 函数共用 `supabase/functions/_shared/bp-core`（Shared BP Core，与浏览器完全同一套纯逻辑），服务端权威：
 验证回合与席位、执行 BP 规则、以 revision CAS 写回状态（commandId 幂等）。
 
 ### 3.5 忍者池容量
@@ -298,6 +304,16 @@ GitHub Pages 部署：在仓库 Settings → Secrets and variables → Actions �
 - 在线模式的撤销 = 撤销最后一步 Ban/Pick，且需对方确认（本地模式撤销能力更强）
 - 胜负记录/进入下一局/重置 仅房主可执行（防双提交），后续可加双方确认
 
+
+## v0.7.0 BP Replay + Match Archive + Share Links
+
+- Versioned、immutable、snapshot-based BP Replay；纯函数 Builder / Validator / Migration / Reconstruction
+- `/history` 统一比赛档案，旧 v0.6 History 点击时动态转换；`/replay/:id` 离线只读时间轴
+- 2 MB JSON bundle 导入预览、canonical SHA-256 完整性校验与紧凑资源 fallback
+- 显式发布 `/share/:token`，玩家名预览/匿名化、512 KB 服务端校验、限速和发布者撤销
+- 数据库 `0006_replay_sharing.sql`；已发布 `0001`～`0005` 保持不变
+
+完整格式、安全与隐私说明见 [`docs/REPLAY.md`](docs/REPLAY.md)。
 
 ## v0.6.0 Production Data Workflow + BP UX Productization
 
