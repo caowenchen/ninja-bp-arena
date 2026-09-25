@@ -14,3 +14,12 @@ verify_jwt = true
 
 [functions.room-join]
 verify_jwt = true
+
+[functions.replay-publish]
+verify_jwt = true
+
+[functions.replay-get]
+verify_jwt = false
+
+[functions.replay-revoke]
+verify_jwt = true

@@ -34,5 +34,8 @@ jobs:
           supabase functions deploy room-create
           supabase functions deploy room-join
           supabase functions deploy room-command
+          supabase functions deploy replay-publish
+          supabase functions deploy replay-get --no-verify-jwt
+          supabase functions deploy replay-revoke
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

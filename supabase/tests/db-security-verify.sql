@@ -319,6 +319,53 @@ begin
   delete from public.rooms where id = v_room;
 end $t14$;
 
+-- 15 v0.7.0 Replay 分享表：仅 service role 可读写，客户端 INSERT/UPDATE/DELETE/SELECT 均不可绕过
+do $t15$
+declare
+  v_user uuid := gen_random_uuid();
+  v_token text := repeat('A', 32);
+  v_count int;
+begin
+  if to_regclass('public.replay_shares') is null then
+    raise exception '缺少 replay_shares（0006 migration 未应用？）';
+  end if;
+  perform set_config('role', 'service_role', true);
+  insert into public.replay_shares (share_token, created_by, replay_data, replay_checksum, source_match_id)
+  values (v_token, v_user, '{"schemaVersion":1}'::jsonb, 'sha256:' || repeat('a', 64), 'security-test');
+
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', v_user::text, 'role', 'authenticated')::text, true);
+  begin
+    insert into public.replay_shares (share_token, created_by, replay_data, replay_checksum, source_match_id)
+    values (repeat('B', 32), v_user, '{}'::jsonb, 'sha256:' || repeat('b', 64), 'attack');
+    raise exception 'authenticated 直接 INSERT replay_shares 成功';
+  exception when insufficient_privilege then
+    raise notice 'CHECK-PASS: 客户端不能直接 INSERT replay_shares';
+  end;
+  begin
+    update public.replay_shares set status = 'REVOKED' where share_token = v_token;
+    if found then raise exception 'authenticated 直接 UPDATE replay_shares 成功'; end if;
+  exception when insufficient_privilege then
+    raise notice 'CHECK-PASS: 客户端不能直接 UPDATE replay_shares';
+  end;
+  begin
+    delete from public.replay_shares where share_token = v_token;
+    if found then raise exception 'authenticated 直接 DELETE replay_shares 成功'; end if;
+  exception when insufficient_privilege then
+    raise notice 'CHECK-PASS: 客户端不能直接 DELETE replay_shares';
+  end;
+  begin
+    select count(*) into v_count from public.replay_shares where share_token = v_token;
+    if v_count <> 0 then raise exception 'authenticated 直接 SELECT replay_shares 成功'; end if;
+  exception when insufficient_privilege then
+    raise notice 'CHECK-PASS: 客户端不能直接 SELECT replay_shares';
+  end;
+
+  perform set_config('role', 'service_role', true);
+  delete from public.replay_shares where share_token = v_token;
+  raise notice 'CHECK-PASS: replay_shares 最小权限与 service role 路径正常';
+end $t15$;
+
 do $done$
 begin
   raise notice 'ALL-DB-SECURITY-CHECKS-PASSED';

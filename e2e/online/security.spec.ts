@@ -7,6 +7,7 @@ import { expect, test } from '@playwright/test'
  */
 
 import { createClient } from '@supabase/supabase-js'
+import { createHash } from 'node:crypto'
 
 const URL_ = process.env.VITE_SUPABASE_URL
 const KEY_ = process.env.VITE_SUPABASE_PUBLISHABLE_KEY
@@ -27,7 +28,7 @@ async function invoke(name: string, token: string, body: unknown) {
   const res = await fetch(`${URL_}/functions/v1/${name}`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       apikey: KEY_!,
       'Content-Type': 'application/json',
     },
@@ -254,6 +255,62 @@ test.describe.serial('在线安全（服务端边界）', () => {
     expect(applied.length + conflicted.length).toBeGreaterThanOrEqual(1)
     const final = await host.client.from('rooms').select('match_state, revision').eq('id', roomId).single()
     expect(final.data!.revision).toBeGreaterThanOrEqual(revision)
+  })
+})
+
+const canonical = (value: unknown): string => Array.isArray(value)
+  ? `[${value.map(canonical).join(',')}]`
+  : value && typeof value === 'object'
+    ? `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(',')}}`
+    : JSON.stringify(value)
+
+function replayBundle(asset?: string) {
+  const side = () => ({ NINJA: { bans: [], picks: [] }, SECRET_SCROLL: { bans: [], picks: [] }, SUMMON: { bans: [], picks: [] } })
+  const replay = {
+    schemaVersion: 1,
+    replayId: 'security-replay', createdAt: 1, completedAt: 2, source: 'LOCAL', rule: makeRule(),
+    players: { blue: 'BLUE', red: 'RED' }, finalScore: { blue: 2, red: 0 }, winner: 'BLUE',
+    games: [1, 2].map((gameNumber) => ({ gameNumber, initial: { blue: side(), red: side() }, winner: 'BLUE' })),
+    actions: [1, 2].map((gameNumber) => ({ id: `result-${gameNumber}`, gameNumber, side: 'BLUE', type: 'RESULT', sequenceIndex: 0 })),
+    resourceSnapshot: asset ? [{ id: 'unsafe', name: 'unsafe', resourceType: 'NINJA', avatar: asset }] : [],
+    metadata: { matchId: 'security-match' },
+  }
+  return { bundleVersion: 1, replay, checksum: `sha256:${createHash('sha256').update(canonical(replay)).digest('hex')}` }
+}
+
+test.describe.serial('Replay sharing security', () => {
+  let owner: Awaited<ReturnType<typeof anonUser>>
+  let token: string
+
+  test('unauthorized / invalid / huge / base64 publish are rejected', async () => {
+    owner = await anonUser()
+    expect((await invoke('replay-publish', '', { bundle: replayBundle() })).status).toBe(401)
+    expect((await invoke('replay-publish', owner.token, { bundle: { nope: true } })).status).toBe(400)
+    expect((await invoke('replay-publish', owner.token, { bundle: replayBundle('data:image/png;base64,AAAA') })).status).toBe(400)
+    expect((await invoke('replay-publish', owner.token, { bundle: replayBundle(), padding: 'x'.repeat(600 * 1024) })).status).toBe(413)
+  })
+
+  test('valid publish/fetch, opaque random miss and direct table attacks', async () => {
+    const published = await invoke('replay-publish', owner.token, { bundle: replayBundle() })
+    expect(published.status).toBe(201)
+    token = published.json.token as string
+    expect(token).toMatch(/^[A-Za-z0-9_-]{32,64}$/)
+    expect((await invoke('replay-get', '', { token: 'Q'.repeat(32) })).status).toBe(404)
+    const fetched = await invoke('replay-get', '', { token })
+    expect(fetched.status).toBe(200)
+    expect((fetched.json.replay as { replayId: string }).replayId).toBe('security-replay')
+    expect((await owner.client.from('replay_shares').insert({ share_token: 'X'.repeat(32) })).error).not.toBeNull()
+    expect((await owner.client.from('replay_shares').update({ status: 'REVOKED' }).eq('share_token', token)).error).not.toBeNull()
+    expect((await owner.client.from('replay_shares').delete().eq('share_token', token)).error).not.toBeNull()
+  })
+
+  test('wrong owner revoke is rejected; owner revoke makes public fetch expire', async () => {
+    const outsider = await anonUser()
+    expect((await invoke('replay-revoke', outsider.token, { token })).status).toBe(403)
+    expect((await invoke('replay-revoke', owner.token, { token })).status).toBe(200)
+    const revoked = await invoke('replay-get', '', { token })
+    expect(revoked.status).toBe(410)
+    expect(revoked.json.error).toBe('SHARE_REVOKED')
   })
 })
 

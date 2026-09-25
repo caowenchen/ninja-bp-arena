@@ -195,6 +195,32 @@ test.describe.serial('在线 BO3 全流程', () => {
     await expect(red.getByTestId('scoreboard')).toContainText('2:1')
   })
 
+  test('保存 Replay → 显式发布 → 新 Context 只读打开 → 撤销失效', async ({ browser }) => {
+    await blue.getByRole('button', { name: '保存 Replay' }).click()
+    await blue.getByRole('button', { name: '分享', exact: true }).click()
+    const dialog = blue.getByRole('dialog')
+    await expect(dialog).toContainText('玩家显示名会出现在')
+    await dialog.getByRole('button', { name: '确认发布' }).click()
+    const link = await dialog.getByLabel('分享链接').inputValue()
+    expect(link).toMatch(/\/share\/[A-Za-z0-9_-]{32,64}$/)
+
+    const publicContext = await browser.newContext()
+    const publicPage = await publicContext.newPage()
+    await publicPage.goto(link)
+    await expect(publicPage.getByText('用户分享的 BP 记录').first()).toBeVisible({ timeout: 20_000 })
+    await expect(publicPage.getByText('张三').first()).toBeVisible()
+    await expect(publicPage.getByText('李四').first()).toBeVisible()
+    await expect(publicPage.getByRole('button', { name: /进入比赛|确认获胜|选择忍者/ })).toHaveCount(0)
+    await publicContext.close()
+
+    await dialog.getByRole('button', { name: '撤销' }).click()
+    const revokedContext = await browser.newContext()
+    const revokedPage = await revokedContext.newPage()
+    await revokedPage.goto(link)
+    await expect(revokedPage.getByText('该分享已失效')).toBeVisible({ timeout: 20_000 })
+    await revokedContext.close()
+  })
+
   test('Host 关闭房间，其他成员看到关闭状态', async () => {
     await blue.getByRole('button', { name: /关闭房间/ }).click()
     await blue.getByRole('button', { name: '关闭房间' }).last().click()

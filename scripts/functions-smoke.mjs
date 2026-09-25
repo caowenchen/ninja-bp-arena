@@ -10,6 +10,7 @@
  * 环境变量：SUPABASE_URL / SUPABASE_ANON_KEY（由 CI 从 supabase status 注入）
  */
 import { createClient } from '@supabase/supabase-js'
+import { createHash } from 'node:crypto'
 
 const url = process.env.SUPABASE_URL ?? 'http://127.0.0.1:54321'
 const anonKey = process.env.SUPABASE_ANON_KEY
@@ -78,7 +79,7 @@ async function invoke(token, name, body) {
   const res = await fetch(`${url}/functions/v1/${name}`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       apikey: anonKey,
       'Content-Type': 'application/json',
     },
@@ -162,5 +163,49 @@ const wrongTurn = await invoke(red.token, 'room-command', {
   payload: { ninjaId: 'smoke-ninja-01' },
 })
 assert(wrongTurn.status === 400 && wrongTurn.json.code === 'NOT_YOUR_TURN', '红方在蓝方回合被拒 NOT_YOUR_TURN')
+
+// Replay publish / public fetch / owner-only revoke.
+const emptySide = () => ({ NINJA: { bans: [], picks: [] }, SECRET_SCROLL: { bans: [], picks: [] }, SUMMON: { bans: [], picks: [] } })
+const replay = {
+  schemaVersion: 1,
+  replayId: 'replay-smoke-local',
+  createdAt: 1,
+  completedAt: 2,
+  source: 'LOCAL',
+  rule: rule(),
+  players: { blue: '冒烟蓝方', red: '冒烟红方' },
+  finalScore: { blue: 2, red: 0 },
+  winner: 'BLUE',
+  games: [1, 2].map((gameNumber) => ({ gameNumber, initial: { blue: emptySide(), red: emptySide() }, winner: 'BLUE' })),
+  actions: [1, 2].map((gameNumber) => ({ id: `result-smoke-${gameNumber}`, gameNumber, side: 'BLUE', type: 'RESULT', sequenceIndex: 0 })),
+  resourceSnapshot: [],
+  metadata: { matchId: 'smoke-local' },
+}
+const canonical = (value) => Array.isArray(value)
+  ? `[${value.map(canonical).join(',')}]`
+  : value && typeof value === 'object'
+    ? `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
+    : JSON.stringify(value)
+const checksum = `sha256:${createHash('sha256').update(canonical(replay)).digest('hex')}`
+const bundle = { bundleVersion: 1, replay, checksum }
+
+const unauthorizedPublish = await invoke('', 'replay-publish', { bundle })
+assert(unauthorizedPublish.status === 401, 'Replay 未认证发布被拒绝')
+const invalidPublish = await invoke(host.token, 'replay-publish', { bundle: { ...bundle, replay: { ...replay, resourceSnapshot: [{ resourceType: 'NINJA', id: 'x', name: 'x', avatar: 'data:image/png;base64,AA' }] } } })
+assert(invalidPublish.status === 400, 'Replay 危险 Base64 素材被服务端拒绝')
+const published = await invoke(host.token, 'replay-publish', { bundle })
+assert(published.status === 201 && /^[A-Za-z0-9_-]{32,64}$/.test(published.json.token), 'Replay 发布返回高熵 opaque token')
+const randomFetch = await invoke('', 'replay-get', { token: 'Z'.repeat(32) })
+assert(randomFetch.status === 404, '随机 Replay token 返回 404')
+const fetched = await invoke('', 'replay-get', { token: published.json.token })
+assert(fetched.status === 200 && fetched.json.checksum === checksum, '公开 Replay 可无房间/Realtime 只读获取')
+const directRead = await host.client.from('replay_shares').select('id')
+assert(Boolean(directRead.error) || directRead.data?.length === 0, 'RLS/GRANT：客户端不能直接读取 replay_shares')
+const wrongRevoke = await invoke(outsider.token, 'replay-revoke', { token: published.json.token })
+assert(wrongRevoke.status === 403, '非发布者不能撤销 Replay 分享')
+const revoked = await invoke(host.token, 'replay-revoke', { token: published.json.token })
+assert(revoked.status === 200, '发布者可撤销 Replay 分享')
+const fetchRevoked = await invoke('', 'replay-get', { token: published.json.token })
+assert(fetchRevoked.status === 410 && fetchRevoked.json.error === 'SHARE_REVOKED', '已撤销 Replay 分享返回失效状态')
 
 console.log('\nEdge Functions 冒烟测试全部通过')

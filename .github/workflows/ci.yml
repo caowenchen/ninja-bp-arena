@@ -54,7 +54,7 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Deno check（Shared Core + 三个 Edge Function）
+      - name: Deno check（Shared Core + 六个 Edge Function）
         run: npm run check:functions
 
   # ---------- 4. Supabase 集成（Local Stack：db reset / RLS 测试 / 函数冒烟 / 在线 E2E） ----------
@@ -100,7 +100,7 @@ jobs:
       - name: Edge Functions 冒烟（真实 HTTP 调用）
         run: node scripts/functions-smoke.mjs
 
-      - name: 在线集成 E2E（完整 BO3 / 权限 / 撤销 / RLS attack）
+      - name: 在线集成 E2E（完整 BO3 / Replay 分享 / 权限 / 撤销 / RLS attack）
         env:
           VITE_SUPABASE_URL: http://127.0.0.1:54321
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ env.SUPABASE_ANON_KEY }}
