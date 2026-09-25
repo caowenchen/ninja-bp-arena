@@ -10,7 +10,7 @@
 export const STORAGE_PREFIX = 'ninja-bp.'
 
 /** 当前存储 schema 版本。修改数据结构时递增并补充 migrator。 */
-export const STORAGE_SCHEMA_VERSION = 4
+export const STORAGE_SCHEMA_VERSION = 5
 
 export const STORAGE_KEYS = {
   ninjaPool: 'ninja_pool',
@@ -24,6 +24,7 @@ export const STORAGE_KEYS = {
   installedDataPacks: 'installed_data_packs',
   dataPackUpdateState: 'data_pack_update_state',
   customNinjaPool: 'custom_ninja_pool',
+  replayLibrary: 'replay_library',
 } as const
 
 interface Wrapped<T> {
