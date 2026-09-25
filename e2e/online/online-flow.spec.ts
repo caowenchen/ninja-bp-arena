@@ -219,6 +219,8 @@ test.describe.serial('在线 BO3 全流程', () => {
     await revokedPage.goto(link)
     await expect(revokedPage.getByText('该分享已失效')).toBeVisible({ timeout: 20_000 })
     await revokedContext.close()
+    await dialog.getByRole('button', { name: '关闭' }).click()
+    await expect(dialog).toBeHidden()
   })
 
   test('Host 关闭房间，其他成员看到关闭状态', async () => {
