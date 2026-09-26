@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-import { useBPStore } from '@/store/bpStore'
 
 function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
@@ -7,8 +6,8 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable
 }
 
-/** 桌面快捷键：Ctrl/Cmd+Z 撤销，Ctrl+Shift+Z / Ctrl+Y 重做（输入框内不生效） */
-export function useKeyboardShortcuts(onEscape?: () => void) {
+/** Global search and local draft shortcuts; text fields retain native editing shortcuts. */
+export function useKeyboardShortcuts(options: { onEscape?: () => void; onUndo?: () => void; onRedo?: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.key === '/' || e.code === 'Slash') && !isTypingTarget(e.target) && !e.ctrlKey && !e.metaKey) {
@@ -17,22 +16,22 @@ export function useKeyboardShortcuts(onEscape?: () => void) {
         return
       }
       if (e.key === 'Escape') {
-        onEscape?.()
+        options.onEscape?.()
         if (isTypingTarget(e.target)) (e.target as HTMLElement).blur()
         return
       }
       if (!e.ctrlKey && !e.metaKey) return
       if (isTypingTarget(e.target)) return
       const key = e.key.toLowerCase()
-      if (key === 'z' && !e.shiftKey) {
+      if (key === 'z' && !e.shiftKey && options.onUndo) {
         e.preventDefault()
-        useBPStore.getState().undo()
-      } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+        options.onUndo()
+      } else if ((key === 'y' || (key === 'z' && e.shiftKey)) && options.onRedo) {
         e.preventDefault()
-        useBPStore.getState().redo()
+        options.onRedo()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onEscape])
+  }, [options])
 }

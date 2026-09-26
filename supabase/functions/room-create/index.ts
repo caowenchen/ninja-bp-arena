@@ -204,7 +204,7 @@ Deno.serve(async (req) => {
     }
 
     // 初始权威状态：SETUP 场次（START_MATCH 命令才会正式开始并填充玩家名）
-    const match = createMatch(rule, seat === 'BLUE' ? displayName : '', seat === 'RED' ? displayName : '')
+    const match = createMatch(rule, seat === 'BLUE' ? displayName : '', seat === 'RED' ? displayName : '', { id: crypto.randomUUID(), now: Date.now() })
 
     // 创建限速：60 秒 5 个 / 24 小时 20 个（按 auth user，成败都计数）
     const { error: attemptError } = await admin.from('action_attempts').insert({

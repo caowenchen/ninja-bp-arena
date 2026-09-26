@@ -1,10 +1,10 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlertTriangle, DatabaseBackup, RotateCcw, Save, Upload } from 'lucide-react'
+import { useRef, useState, type ReactNode } from 'react'
+import { DatabaseBackup, Upload } from 'lucide-react'
 import type { BattleRule } from '@/types/bp'
 import type { Ninja } from '@/types/ninja'
 import type { MatchState } from '@/types/match'
 import { DEFAULT_RULE, cloneRule } from '@/data/defaultRules'
-import { describeSequence, parseSequenceSteps, validateBattleRule } from '@/engine/ruleEngine'
+import { analyzeRuleFeasibility } from '@bp-core'
 import { validateMatchState, validateNinjaRecord, validateStoredRule } from '@/engine/matchValidator'
 import { useSettingsStore, type AppSettings } from '@/store/settingsStore'
 import { useNinjaStore } from '@/store/ninjaStore'
@@ -16,8 +16,7 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Dialog } from '@/components/common/Dialog'
 import { buildBackup, parseBackup } from '@/utils/importExport'
 import { downloadTextFile } from '@/utils/clipboard'
-
-const TIMER_PRESETS = [15, 30, 45, 60, 90] as const
+import { RuleEditor } from '@/components/settings/RuleEditor'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -27,7 +26,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
     </section>
   )
 }
-
 function Toggle({ label, desc, checked, onChange }: { label: string; desc?: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <label className="flex items-center justify-between gap-4 py-2">
@@ -71,35 +69,16 @@ export default function SettingsPage() {
   const restoreBPData = useBPStore((s) => s.restoreBackup)
 
   const [draft, setDraft] = useState<BattleRule>(() => cloneRule(customRule ?? DEFAULT_RULE))
-  const [banText, setBanText] = useState(() => JSON.stringify((customRule ?? DEFAULT_RULE).banSequence, null, 2))
-  const [pickText, setPickText] = useState(() => JSON.stringify((customRule ?? DEFAULT_RULE).pickSequence, null, 2))
-  const [errors, setErrors] = useState<string[]>([])
   const [resetRuleOpen, setResetRuleOpen] = useState(false)
   const [resetPoolOpen, setResetPoolOpen] = useState(false)
   const [restoreSummary, setRestoreSummary] = useState<RestoreSummary | null>(null)
   const backupInputRef = useRef<HTMLInputElement>(null)
 
-  const preview = useMemo(() => {
-    const ban = describeSequence(draft.banSequence)
-    const pick = describeSequence(draft.pickSequence)
-    return { ban, pick }
-  }, [draft])
-
   const handleSaveRule = () => {
-    const ban = parseSequenceSteps(safeParse(banText), 'banSequence', 'BAN')
-    const pick = parseSequenceSteps(safeParse(pickText), 'pickSequence', 'PICK')
-    const allErrors = [...ban.errors, ...pick.errors]
-    if (ban.steps) draft.banSequence = ban.steps
-    if (pick.steps) draft.pickSequence = pick.steps
-    if (allErrors.length === 0) {
-      allErrors.push(...validateBattleRule(draft))
-    }
-    if (allErrors.length > 0) {
-      setErrors(allErrors)
+    if (analyzeRuleFeasibility(draft).errors.length > 0) {
       toast('规则校验未通过，请检查后重试', 'error')
       return
     }
-    setErrors([])
     saveCustomRule(cloneRule(draft))
     toast('规则模板已保存，将应用于之后新开的比赛', 'success')
   }
@@ -107,9 +86,6 @@ export default function SettingsPage() {
   const handleRestoreDefault = () => {
     resetCustomRule()
     setDraft(cloneRule(DEFAULT_RULE))
-    setBanText(JSON.stringify(DEFAULT_RULE.banSequence, null, 2))
-    setPickText(JSON.stringify(DEFAULT_RULE.pickSequence, null, 2))
-    setErrors([])
     toast('已恢复默认规则模板', 'success')
   }
 
@@ -190,12 +166,6 @@ export default function SettingsPage() {
     setRestoreSummary(null)
   }
 
-  const timerSelectValue = !draft.timerEnabled
-    ? 'off'
-    : TIMER_PRESETS.includes(draft.timerSeconds as (typeof TIMER_PRESETS)[number])
-      ? String(draft.timerSeconds)
-      : 'custom'
-
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4 px-4 pb-16">
       <header className="mt-6">
@@ -206,114 +176,8 @@ export default function SettingsPage() {
       </header>
 
       {/* 比赛规则 */}
-      <Section title={`比赛规则 · ${customRule?.name ?? '武斗赛 BO3 默认模板'}`}>
-        <div className="divide-y divide-border-muted">
-          <Toggle
-            label="Ban 仅在第一局进行"
-            desc="关闭后，后续每一局都会重新执行 Ban 序列"
-            checked={draft.banOnlyFirstGame}
-            onChange={(v) => setDraft({ ...draft, banOnlyFirstGame: v })}
-          />
-          <Toggle
-            label="Ban 跨局持续生效"
-            desc="关闭后，每局的 Ban 只在本局内有效"
-            checked={draft.banPersistence}
-            onChange={(v) => setDraft({ ...draft, banPersistence: v })}
-          />
-          <Toggle
-            label="已出场忍者整场禁用"
-            desc="关闭后，之前小局使用过的忍者仍可再次选出"
-            checked={draft.usedNinjaLocked}
-            onChange={(v) => setDraft({ ...draft, usedNinjaLocked: v })}
-          />
-          <div className="flex items-center justify-between gap-4 py-2">
-            <span>
-              <span className="block text-sm text-fog-100">每步倒计时</span>
-              <span className="mt-0.5 block text-xs text-fog-600">同一序列步骤（如红方连续选 2 人）共用一份时间，刷新页面后恢复剩余时间</span>
-            </span>
-            <div className="flex items-center gap-2">
-              <select
-                value={timerSelectValue}
-                onChange={(e) => {
-                  const v = e.target.value
-                  if (v === 'off') setDraft({ ...draft, timerEnabled: false })
-                  else if (v === 'custom') setDraft({ ...draft, timerEnabled: true, timerSeconds: 45 })
-                  else setDraft({ ...draft, timerEnabled: true, timerSeconds: Number(v) })
-                }}
-                className="rounded border border-border-strong bg-ink-900 px-2.5 py-1.5 text-xs text-fog-100 focus:outline-none"
-              >
-                {TIMER_PRESETS.map((s) => (
-                  <option key={s} value={s}>{s} 秒</option>
-                ))}
-                <option value="custom">自定义</option>
-                <option value="off">关闭</option>
-              </select>
-              {timerSelectValue === 'custom' && (
-                <input
-                  type="number"
-                  min={5}
-                  max={600}
-                  value={draft.timerSeconds}
-                  onChange={(e) => setDraft({ ...draft, timerSeconds: Number(e.target.value) })}
-                  className="w-20 rounded border border-border-strong bg-ink-900 px-2.5 py-1.5 text-xs text-fog-100 focus:outline-none"
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      </Section>
-
-      {/* 序列编辑器 */}
-      <Section title="Ban / Pick 序列（高级）">
-        <p className="mb-3 text-xs text-fog-600">
-          当前预览：Ban（第 1 局）{preview.ban}；Pick（每局）{preview.pick}。JSON 格式：side（BLUE/RED）、action、count（1~6）。
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-fog-300">banSequence</span>
-            <textarea
-              value={banText}
-              onChange={(e) => setBanText(e.target.value)}
-              rows={9}
-              spellCheck={false}
-              className="rounded border border-border-strong bg-ink-900 p-3 font-mono text-xs text-fog-100 focus:border-blue-team/60 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-fog-300">pickSequence</span>
-            <textarea
-              value={pickText}
-              onChange={(e) => setPickText(e.target.value)}
-              rows={9}
-              spellCheck={false}
-              className="rounded border border-border-strong bg-ink-900 p-3 font-mono text-xs text-fog-100 focus:border-blue-team/60 focus:outline-none"
-            />
-          </label>
-        </div>
-        {errors.length > 0 && (
-          <div className="mt-3 rounded border border-red-team/40 bg-red-team/10 p-3 text-xs text-red-team-soft">
-            <p className="mb-1 flex items-center gap-1 font-semibold"><AlertTriangle size={12} /> 校验未通过</p>
-            {errors.map((e) => (
-              <p key={e}>· {e}</p>
-            ))}
-          </div>
-        )}
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={handleSaveRule}
-            className="flex items-center gap-1.5 rounded bg-blue-team px-4 py-2 text-xs font-bold text-white transition-colors hover:brightness-110"
-          >
-            <Save size={14} /> 保存规则
-          </button>
-          <button
-            type="button"
-            onClick={() => setResetRuleOpen(true)}
-            className="flex items-center gap-1.5 rounded border border-border-strong px-4 py-2 text-xs text-fog-300 transition-colors hover:bg-surface-2"
-          >
-            <RotateCcw size={14} /> 恢复默认规则
-          </button>
-        </div>
+      <Section title={`比赛规则 · ${customRule?.name ?? 'Ninja Only 示例'}`}>
+        <RuleEditor draft={draft} onChange={setDraft} onSave={handleSaveRule} onRestore={() => setResetRuleOpen(true)} />
       </Section>
 
       {/* 通用 */}
@@ -446,12 +310,4 @@ export default function SettingsPage() {
       </Dialog>
     </div>
   )
-}
-
-function safeParse(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return text // 非法 JSON 交给 parseSequenceSteps 报“必须是数组”
-  }
 }

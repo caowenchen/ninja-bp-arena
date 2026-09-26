@@ -1,5 +1,6 @@
 import type { BattleRule, BPAction, MatchStatus, Side, BPActionType, MatchState, Ninja } from './types.ts'
 import { validateBattleRule } from './ruleEngine.ts'
+import { getCurrentDraftPhase, getGameSequence, getPlayerResourceState } from './bpEngine.ts'
 
 /**
  * 持久化数据的运行时校验（Shared BP Core）。
@@ -170,23 +171,39 @@ export function validateMatchState(value: unknown): boolean {
   if (lastGame.gameNumber !== value.currentGame) return false
   if (value.currentGame > rule.bestOf) return false
 
-  // 比分合理性：任一方得分不得超过 winsRequired，且不得超过已完成局数
+  // 比分只能从已完成小局得出；状态也必须与胜场一致。
   const score = value.score as { blue: number; red: number }
-  const maxWins = Math.max(score.blue, score.red)
-  if (maxWins > rule.winsRequired) return false
-  if (maxWins > value.games.length) return false
-  // MATCH_FINISHED 必须有合理的结束依据：有人达标 或 已打满 bestOf
-  if (value.status === 'MATCH_FINISHED') {
-    const reached = score.blue >= rule.winsRequired || score.red >= rule.winsRequired
-    const playedOut = value.currentGame >= rule.bestOf
-    if (!reached && !playedOut) return false
-  }
+  const games = value.games as MatchState['games']
+  const blueWins = games.filter((game) => game.winner === 'BLUE').length
+  const redWins = games.filter((game) => game.winner === 'RED').length
+  if (score.blue !== blueWins || score.red !== redWins) return false
+  if (games.slice(0, -1).some((game) => !game.winner)) return false
+  if (games.some((game) => game.winner && game.started === false)) return false
+  const reached = blueWins >= rule.winsRequired || redWins >= rule.winsRequired
+  const playedOut = games.length === rule.bestOf && Boolean(games[games.length - 1].winner)
+  if ((value.status === 'MATCH_FINISHED') !== (reached || playedOut)) return false
 
   // history
   if (!Array.isArray(value.history)) return false
   for (const action of value.history) {
     if (!isValidBPAction(action)) return false
+    if ((action as BPAction).gameNumber > value.currentGame) return false
   }
+
+  const match = value as unknown as MatchState
+  for (const game of games) {
+    const sequence = getGameSequence(match, game.gameNumber)
+    for (const type of ['NINJA', 'SECRET_SCROLL', 'SUMMON'] as const) {
+      const blue = getPlayerResourceState(game.blue, type)
+      const red = getPlayerResourceState(game.red, type)
+      const bans = sequence.filter((step) => step.resourceType === type && step.action === 'BAN').length
+      const picks = sequence.filter((step) => step.resourceType === type && step.action === 'PICK').length
+      if (game.gameNumber === 1 && (blue.bans.length + red.bans.length > bans || blue.picks.length + red.picks.length > picks)) return false
+      if (new Set([...blue.bans, ...red.bans]).size !== blue.bans.length + red.bans.length) return false
+      if (new Set(blue.picks).size !== blue.picks.length || new Set(red.picks).size !== red.picks.length) return false
+    }
+  }
+  if (lastGame.started && !getCurrentDraftPhase(match).sequenceComplete) return false
 
   // 时间戳
   if (typeof value.createdAt !== 'number' || typeof value.updatedAt !== 'number') return false

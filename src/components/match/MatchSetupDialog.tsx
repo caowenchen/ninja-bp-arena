@@ -5,8 +5,7 @@ import { Dialog } from '@/components/common/Dialog'
 import { useBPStore } from '@/store/bpStore'
 import { useSettingsStore } from '@/store/settingsStore'
 import { DEFAULT_RULE, FULL_LOADOUT_DEMO_RULE, cloneRule } from '@/data/defaultRules'
-import { describeSequence } from '@/engine/ruleEngine'
-import { countEnabledResources, getMinimumRequiredResources } from '@bp-core'
+import { countEnabledResources, analyzeRuleFeasibility, getResourceDraftRules, RESOURCE_TYPE_LABEL } from '@bp-core'
 import { useNinjaStore } from '@/store/ninjaStore'
 import type { MatchState } from '@/types/match'
 import { useDataPackStore } from '@/dataPack/store'
@@ -42,11 +41,11 @@ export function MatchSetupDialog({ open, onClose, unfinished }: MatchSetupDialog
     secretScrolls: countEnabledResources(activePack?.secretScrolls ?? []),
     summons: countEnabledResources(activePack?.summons ?? []),
   }
-  const requiredPool = getMinimumRequiredResources(rule)
-  const insufficient = (['ninjas', 'secretScrolls', 'summons'] as const).filter((key) => available[key] < requiredPool[key])
-  const poolInsufficient = insufficient.length > 0
+  const analysis = analyzeRuleFeasibility(rule, available)
+  const poolInsufficient = analysis.errors.length > 0
 
   const handleStart = () => {
+    if (poolInsufficient) return
     startNewMatch(blueName, redName, rule)
     onClose()
     navigate('/bp')
@@ -66,7 +65,7 @@ export function MatchSetupDialog({ open, onClose, unfinished }: MatchSetupDialog
             type="button"
             onClick={handleStart}
             disabled={poolInsufficient}
-            title={poolInsufficient ? '可用忍者数量不足' : undefined}
+            title={poolInsufficient ? analysis.errors[0] : undefined}
             className="rounded-lg bg-side-blue px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-side-blue/85 disabled:cursor-not-allowed disabled:opacity-40"
           >
             开始比赛
@@ -113,7 +112,7 @@ export function MatchSetupDialog({ open, onClose, unfinished }: MatchSetupDialog
         <label className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-fog-300">规则模板</span>
           <select value={template} onChange={(event) => setTemplate(event.target.value as 'CURRENT' | 'FULL_LOADOUT')} className="rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-fog-100">
-            <option value="CURRENT">Ninja Only（当前规则）</option>
+            <option value="CURRENT">当前规则 · {currentRule.name}</option>
             <option value="FULL_LOADOUT">Full Loadout Demo（示例）</option>
           </select>
           <span className="text-[10px] text-fog-600">模板均为玩家工具配置，不代表官方赛事规则。</span>
@@ -121,16 +120,14 @@ export function MatchSetupDialog({ open, onClose, unfinished }: MatchSetupDialog
 
         <div className="rounded-lg border border-ink-600 bg-ink-900/60 p-3 text-xs">
           <p className="mb-1 font-semibold text-fog-300">规则模板：{rule.name}</p>
-          <p className="text-fog-500">Ban（第 1 局）：{describeSequence(rule.banSequence)}</p>
-          <p className="text-fog-500">Pick（每局）：{describeSequence(rule.pickSequence)}</p>
+          {getResourceDraftRules(rule).filter((draft) => draft.enabled).map((draft) => <p key={draft.resourceType} className="text-fog-500">{RESOURCE_TYPE_LABEL[draft.resourceType]}：{draft.sequence.map((step) => `${step.side === 'BLUE' ? '蓝方' : '红方'} ${step.action}×${step.count}`).join(' → ')}</p>)}
           <p className="mt-1.5 text-[10px] text-fog-600">
             BO{rule.bestOf} · 先胜 {rule.winsRequired} 局 · {rule.timerEnabled ? `每步倒计时 ${rule.timerSeconds} 秒` : '无倒计时'} ·
             可在「规则设置」中修改
           </p>
           {poolInsufficient && (
             <p className="mt-1.5 rounded border border-side-red/40 bg-side-red/10 p-2 text-[11px] text-side-red-soft">
-              资源不足：{insufficient.map((key) => `${key} ${available[key]}/${requiredPool[key]}`).join('，')}。
-              请切换完整 Battle Data Pack 或启用足够资源。
+              {analysis.errors.join('；')}。请检查规则或补充资源池。
             </p>
           )}
         </div>

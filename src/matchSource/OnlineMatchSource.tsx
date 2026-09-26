@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 import { computeTimerPhaseKey, getPhase, snapshotResources, toOnlineNinjaSnapshots } from '@bp-core'
 import { useOnlineRoomStore } from '@/online/onlineRoomStore'
 import { MatchSourceProvider, type MatchSource } from './context'
@@ -8,6 +8,24 @@ import { MatchSourceProvider, type MatchSource } from './context'
  * 验证并应用；本组件不产生任何本地状态修改。操作为异步（等待服务端确认）。
  */
 export function OnlineMatchSource({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    const onOffline = () => useOnlineRoomStore.getState().markOffline()
+    const onOnline = () => {
+      const state = useOnlineRoomStore.getState()
+      if (state.roomId && state.roomCode) void state.enterRoom(state.roomId, state.roomCode)
+    }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void useOnlineRoomStore.getState().refreshSnapshot()
+    }
+    window.addEventListener('offline', onOffline)
+    window.addEventListener('online', onOnline)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('offline', onOffline)
+      window.removeEventListener('online', onOnline)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [])
   const authoritativeMatch = useOnlineRoomStore((s) => s.match)
   const mySeat = useOnlineRoomStore((s) => s.mySeat)
   const isHost = useOnlineRoomStore((s) => s.isHost)
@@ -46,9 +64,10 @@ export function OnlineMatchSource({ children }: { children: ReactNode }) {
       phase?.side === mySeat &&
       !phase.sequenceComplete,
   )
-  const canOperate = isMyTurn && connection !== 'offline' && !pendingCommand
+  const canOperate = isMyTurn && connection === 'connected' && !pendingCommand
+  const legacyKey = phase && match ? `${match.id}:G${phase.gameNumber}:${phase.sequenceComplete ? 'DONE' : `${phase.resourceType}:S${phase.stepIndex ?? 0}`}` : null
   const onlineDeadline =
-    match?.timer && match.timer.phaseKey === computeTimerPhaseKey(match) ? match.timer.deadlineAt : null
+    match?.timer && (match.timer.phaseKey === computeTimerPhaseKey(match) || match.timer.phaseKey === legacyKey) ? match.timer.deadlineAt : null
 
   const source: MatchSource = {
     mode: 'online',

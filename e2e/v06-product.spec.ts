@@ -24,10 +24,11 @@ test('资源搜索、筛选、锁定原因与键盘导航可用', async ({ page 
   await page.getByRole('button', { name: /漩涡鸣人（可选）/ }).click()
   const locked = page.getByRole('button', { name: /漩涡鸣人（已禁用）/ })
   await expect(locked).toHaveAttribute('aria-disabled', 'true')
+  await expect(locked).toBeDisabled()
   await expect(locked).toHaveAttribute('title', /本局已被禁用/)
-  await locked.focus()
+  await page.getByRole('button', { name: '查看漩涡鸣人详情' }).focus()
   await page.keyboard.press('ArrowRight')
-  await expect(page.locator('[data-resource-card]:focus')).toHaveCount(1)
+  await expect(page.locator('[data-resource-inspect]:focus')).toHaveCount(1)
 })
 
 test.describe('390px Full Loadout workspace', () => {

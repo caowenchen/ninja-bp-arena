@@ -57,6 +57,7 @@ interface OnlineRoomState {
   isMyTurnNow: () => boolean
   leaveRoom: () => void
   refreshSnapshot: () => Promise<void>
+  markOffline: () => void
   clearError: () => void
 }
 
@@ -85,6 +86,14 @@ function startPoll(get: () => OnlineRoomState) {
 function deriveMySeat(members: RoomMember[], userId: string | null): Seat | null {
   if (!userId) return null
   return members.find((m) => m.user_id === userId)?.seat ?? null
+}
+
+function userFacingRoomError(err: unknown): string {
+  const code = (err as { code?: string } | null)?.code
+  if (code === 'DB_ERROR') return '房间数据暂时无法读取，请稍后重试'
+  if (code === 'NETWORK') return '网络连接异常，请稍后重试'
+  if (code === 'INTERNAL' || !code) return '在线房间暂时不可用，请稍后重试'
+  return err instanceof Error ? err.message : '在线房间暂时不可用，请稍后重试'
 }
 
 export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
@@ -168,7 +177,7 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
           error: `${extra.resourceType ?? 'ninjas'} 当前只有 ${extra.available} 个可用资源，该规则至少需要 ${extra.required} 个。请先补充资源池。`,
         }
       }
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      return { ok: false, error: userFacingRoomError(err) }
     }
   },
 
@@ -181,7 +190,7 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
       const entered = await get().enterRoom(identity.roomId, identity.code)
       return entered.ok ? { ok: true, seat: identity.seat } : { ok: false, error: entered.error }
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      return { ok: false, error: userFacingRoomError(err) }
     }
   },
 
@@ -190,9 +199,14 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
     if (!supabase) return { ok: false, error: '在线模式尚未配置' }
     leaving = false
     stopPoll()
+    if (resubscribeTimer) {
+      window.clearTimeout(resubscribeTimer)
+      resubscribeTimer = null
+    }
     set({ connection: 'connecting', roomId, roomCode: code, lastError: null })
     try {
       const snap = await roomApi.fetchSnapshot(roomId)
+      if (leaving || get().roomId !== roomId) return { ok: false, error: '已离开房间' }
       if (!snap.room) {
         set({ connection: 'offline', lastError: { code: 'ROOM_NOT_FOUND', message: '房间不存在或已过期' } })
         return { ok: false, error: '房间不存在或你没有加入该房间' }
@@ -243,7 +257,9 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
         .subscribe(async (status: string) => {
           if (status === 'SUBSCRIBED') {
             resubscribeAttempts = 0
-            set({ connection: 'connected' })
+            set({ connection: 'syncing' })
+            await get().refreshSnapshot()
+            if (get().connection === 'syncing') set({ connection: 'connected' })
             startPoll(get)
             const me = get().members.find((m) => m.user_id === get().userId)
             if (me) {
@@ -273,8 +289,9 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
 
       return { ok: true }
     } catch (err) {
-      set({ connection: 'offline', lastError: { code: 'SNAPSHOT_FAILED', message: err instanceof Error ? err.message : String(err) } })
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      const message = userFacingRoomError(err)
+      set({ connection: 'offline', lastError: { code: 'SNAPSHOT_FAILED', message } })
+      return { ok: false, error: message }
     }
   },
 
@@ -284,7 +301,9 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
     if (!roomId || !supabase) return
     try {
       const snap = await roomApi.fetchSnapshot(roomId)
+      if (leaving || get().roomId !== roomId) return
       if (!snap.room) return
+      if (get().roomId !== roomId || snap.room.revision < get().revision) return
       const userId = get().userId
       const parsed = parseRoomNinjaSnapshot(snap.room.pool)
       set({
@@ -300,7 +319,7 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
         roomNinjas: parsed.valid && parsed.ninjas.length > 0 ? parsed.ninjas : null,
         roomPackMetadata: (snap.room.data_pack_metadata as MatchPackMetadata | null) ?? null,
         roomResources: snap.room.resource_snapshot ?? null,
-        connection: get().connection === 'syncing' ? 'connected' : get().connection,
+        connection: get().connection === 'syncing' || get().connection === 'reconnecting' ? 'connected' : get().connection,
       })
     } catch {
       set({ connection: 'reconnecting' })
@@ -309,38 +328,47 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
 
   /** 发送语义命令：服务端验证 → 应用 → 返回权威状态 */
   sendCommand: async (type, payload) => {
-    const { roomId, revision, pendingCommand, match } = get()
+    const { roomId, revision, pendingCommand, match, connection } = get()
     if (!supabase || !roomId || !match) return { ok: false, reason: '未连接房间' }
     if (pendingCommand) return { ok: false, reason: '正在确认上一步操作……' }
+    if (connection !== 'connected') return { ok: false, reason: '正在同步房间，请稍候' }
 
     const commandId = crypto.randomUUID()
     set({ pendingCommand: type, connection: 'syncing' })
     try {
       const res = await roomApi.sendCommand({ roomId, commandId, expectedRevision: revision, type, payload })
       if (res.status === 'APPLIED' && res.match) {
-        set({
-          match: res.match,
-          revision: res.revision ?? get().revision + 1,
-          roomStatus: res.roomStatus ?? get().roomStatus,
-          pendingUndo: res.pendingUndo ?? null,
-          pendingCommand: null,
-          connection: 'connected',
-        })
+        if ((res.revision ?? -1) >= get().revision) {
+          set({
+            match: res.match,
+            revision: res.revision ?? get().revision + 1,
+            roomStatus: res.roomStatus ?? get().roomStatus,
+            pendingUndo: res.pendingUndo ?? null,
+            pendingCommand: null,
+            connection: 'connected',
+          })
+        } else set({ pendingCommand: null, connection: 'connected' })
         return { ok: true }
+      }
+      if (res.code === 'REVISION_CONFLICT') {
+        set({ pendingCommand: null, connection: 'syncing', lastError: { code: res.code, message: '比赛状态已更新，正在同步' } })
+        await get().refreshSnapshot()
+        return { ok: false, reason: '比赛状态已更新' }
       }
       const message = res.message ?? '操作被拒绝'
       set({ pendingCommand: null, connection: 'connected', lastError: { code: res.code ?? 'REJECTED', message } })
       return { ok: false, reason: message }
     } catch (err) {
       const code = (err as { code?: string }).code
-      const message = err instanceof Error ? err.message : '网络异常'
-      set({ pendingCommand: null, connection: code === 'REVISION_CONFLICT' ? 'connected' : 'reconnecting' })
+      const message = userFacingRoomError(err)
+      set({ pendingCommand: null, connection: code === 'REVISION_CONFLICT' ? 'syncing' : 'reconnecting' })
       if (code === 'REVISION_CONFLICT') {
         set({ lastError: { code, message: '比赛状态已更新，正在同步' } })
-        void get().refreshSnapshot()
-        return { ok: false, reason: '比赛状态已更新，正在同步' }
+        await get().refreshSnapshot()
+        return { ok: false, reason: '比赛状态已更新' }
       }
       set({ lastError: { code: code ?? 'NETWORK', message } })
+      void get().refreshSnapshot()
       return { ok: false, reason: message }
     }
   },
@@ -390,6 +418,7 @@ export const useOnlineRoomStore = create<OnlineRoomState>()((set, get) => ({
   },
 
   clearError: () => set({ lastError: null }),
+  markOffline: () => set({ connection: 'offline' }),
 }))
 
 // E2E 调试用：DEV 构建下暴露 store（生产构建不含）

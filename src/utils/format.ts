@@ -30,3 +30,17 @@ export function normalizeForSearch(text: string): string {
     .replace(/\s+/g, '')
     .toLowerCase()
 }
+
+/** Lower score ranks first; Infinity means no match. */
+export function searchRank(item: { name: string; aliases?: string[]; tags?: string[]; series?: string[]; forms?: string[] }, query: string): number {
+  if (!query) return 0
+  const name = normalizeForSearch(item.name)
+  if (name === query) return 0
+  if (name.startsWith(query)) return 1
+  if (item.aliases?.some((alias) => normalizeForSearch(alias) === query)) return 2
+  if (item.aliases?.some((alias) => normalizeForSearch(alias).startsWith(query))) return 3
+  if (name.includes(query)) return 4
+  if (item.aliases?.some((alias) => normalizeForSearch(alias).includes(query))) return 5
+  if ([...(item.tags ?? []), ...(item.series ?? []), ...(item.forms ?? [])].some((value) => normalizeForSearch(value).includes(query))) return 6
+  return Infinity
+}

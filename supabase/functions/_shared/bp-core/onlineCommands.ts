@@ -96,7 +96,7 @@ export interface RoomCommand {
   roomId: string
   expectedRevision: number
   type: OnlineCommandType
-  payload?: { ninjaId?: string; resourceId?: string; resourceType?: DraftResourceType; side?: Side }
+  payload?: { ninjaId?: string; resourceId?: string; resourceType?: DraftResourceType; side?: Side; gameNumber?: number }
 }
 
 export type CommandOutcome =
@@ -157,7 +157,7 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
         ...match,
         bluePlayerName: ctx.seatMembers.BLUE.displayName || match.bluePlayerName,
         redPlayerName: ctx.seatMembers.RED.displayName || match.redPlayerName,
-      })
+      }, { now: ctx.now })
       return { match: next, extra: 'ACTIVE' }
     }
 
@@ -171,6 +171,8 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
       const phase = getPhase(match)
       if (!phase.side || phase.sequenceComplete) return reject('NOT_YOUR_TURN', '当前不是选择阶段')
       if (phase.side !== ctx.mySeat) return reject('NOT_YOUR_TURN', '还没有轮到你操作')
+      if (cmd.payload?.side !== undefined && cmd.payload.side !== ctx.mySeat) return reject('INVALID_COMMAND', '阵营与当前行动方不一致')
+      if (cmd.payload?.gameNumber !== undefined && cmd.payload.gameNumber !== match.currentGame) return reject('INVALID_COMMAND', '小局编号与当前状态不一致')
       const resourceType = cmd.type === 'SELECT_NINJA' ? 'NINJA' : cmd.payload?.resourceType
       if (!resourceType || resourceType !== phase.resourceType) return reject('INVALID_COMMAND', '资源类型与当前阶段不一致')
       const resourceId = cmd.type === 'SELECT_NINJA' ? cmd.payload?.ninjaId : cmd.payload?.resourceId
@@ -181,7 +183,7 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
       const check = canSelectResource(match, resourceType, resourceId, resource)
       if (!check.allowed) return reject(resourceType === 'NINJA' ? 'NINJA_BLOCKED' : 'RESOURCE_BLOCKED', check.reason ?? '无法选择该资源')
 
-      const result = selectResource(match, resourceType, resourceId, resource)
+      const result = selectResource(match, resourceType, resourceId, resource, { now: ctx.now, actionId: cmd.commandId })
       if (!result.ok || !result.state) return reject('ENGINE_REJECTED', result.reason ?? '无法选择该资源')
       return { match: result.state }
     }
@@ -189,7 +191,7 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
     case 'ENTER_GAME': {
       if (ctx.roomStatus !== 'ACTIVE') return reject('ROOM_NOT_ACTIVE', '比赛未在进行中')
       if (!isSeatPlayer(ctx.mySeat) && !ctx.isHost) return reject('NOT_PERMITTED', '观战者不能操作')
-      const result = enterGame(match)
+      const result = enterGame(match, { now: ctx.now })
       if (!result.ok) {
         // 双方同时点击“进入比赛”时，第二次视为幂等成功
         if (result.reason === '本局已进入比赛') return { match }
@@ -203,7 +205,7 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
       if (ctx.roomStatus !== 'ACTIVE') return reject('ROOM_NOT_ACTIVE', '比赛未在进行中')
       const side = cmd.payload?.side
       if (side !== 'BLUE' && side !== 'RED') return reject('INVALID_COMMAND', '缺少胜者阵营')
-      const result = setGameWinner(match, side)
+      const result = setGameWinner(match, side, { now: ctx.now })
       if (!result.ok || !result.state) return reject('ENGINE_REJECTED', result.reason ?? '无法记录胜负')
       return { match: result.state, extra: result.state.status === 'MATCH_FINISHED' ? 'FINISHED' : undefined }
     }
@@ -211,7 +213,7 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
     case 'NEXT_GAME': {
       if (!ctx.isHost) return reject('NOT_HOST', '只有房主可以进入下一局')
       if (ctx.roomStatus !== 'ACTIVE') return reject('ROOM_NOT_ACTIVE', '比赛未在进行中')
-      const result = nextGame(match)
+      const result = nextGame(match, { now: ctx.now })
       if (!result.ok || !result.state) return reject('ENGINE_REJECTED', result.reason ?? '无法进入下一局')
       return { match: result.state }
     }
@@ -222,7 +224,7 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
         return reject('ROOM_NOT_ACTIVE', '当前状态不能重置')
       }
       // 整场重开：比分 0:0、无 Ban/Pick/USED/历史、计时器清空，回到 WAITING 由房主再次开始
-      return { match: restartMatch(match), extra: 'WAITING' }
+      return { match: restartMatch(match, { now: ctx.now }), extra: 'WAITING' }
     }
 
     case 'REQUEST_UNDO': {
@@ -230,6 +232,7 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
       if (!isSeatPlayer(ctx.mySeat)) return reject('NOT_PERMITTED', '观战者不能请求撤销')
       if (match.status === 'MATCH_FINISHED') return reject('MATCH_FINISHED', '比赛已经结束')
       if (match.history.length === 0) return reject('NOTHING_TO_UNDO', '没有可撤销的操作')
+      if (ctx.pendingUndo && ctx.pendingUndo.pendingAtRevision === ctx.revision && ctx.now - ctx.pendingUndo.createdAt < 30_000) return reject('NOT_PERMITTED', '已有待处理的撤销请求')
       return { match }
     }
 
@@ -246,7 +249,8 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
       if (!isOtherPlayer && !ctx.isHost) return reject('NOT_PERMITTED', '只有对局玩家可以处理撤销请求')
       // 请求应用后发生过任何其他比赛命令（revision 前进）→ 自动失效
       if (pending.pendingAtRevision !== ctx.revision) return reject('UNDO_EXPIRED', '撤销请求已过期')
-      const result = undoLastAction(ctx.match)
+      if (ctx.now - pending.createdAt >= 30_000) return reject('UNDO_EXPIRED', '撤销请求已过期')
+      const result = undoLastAction(ctx.match, { now: ctx.now })
       if (!result.ok || !result.state) return reject('NOTHING_TO_UNDO', result.reason ?? '没有可撤销的操作')
       return { match: result.state }
     }
@@ -254,6 +258,7 @@ function applyOneCommand(ctx: RoomCommandContext, cmd: RoomCommand): { match: Ma
     case 'REJECT_UNDO': {
       const pending = ctx.pendingUndo
       if (!pending) return reject('NO_PENDING_UNDO', '当前没有撤销请求')
+      if (pending.pendingAtRevision !== ctx.revision || ctx.now - pending.createdAt >= 30_000) return reject('UNDO_EXPIRED', '撤销请求已过期')
       const involved = isSeatPlayer(ctx.mySeat) || ctx.isHost
       if (!involved) return reject('NOT_PERMITTED', '观战者不能处理撤销请求')
       return { match: ctx.match }
@@ -316,6 +321,9 @@ export function applyRoomCommand(ctx: RoomCommandContext, cmd: RoomCommand): Com
     if (shouldRebuild && computeTimerPhaseKey(nextMatch)) {
       nextMatch = rebuildTimer(nextMatch, ctx.now)
     }
+  }
+  if (nextMatch.status === 'MATCH_FINISHED' && nextMatch.timer) {
+    nextMatch = { ...nextMatch, timer: { phaseKey: computeTimerPhaseKey(nextMatch), deadlineAt: null, timedOut: false } }
   }
 
   // 撤销请求的生命周期：

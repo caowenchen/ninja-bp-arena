@@ -3,7 +3,7 @@
 > Ninja BP Arena —— 玩家制作的非官方赛事 BP 辅助工具。
 > **本工具与游戏官方无隶属或合作关系**；内置忍者数据与规则均为示例，不代表官方名单或官方规则。
 
-一款玩家制作的通用资源 Ban/Pick 模拟器：v0.7 提供版本化 BP Replay、比赛档案、导入导出和显式只读分享链接；本地模式纯前端离线可用，在线房间与分享基于 Supabase。
+一款玩家制作的通用资源 Ban/Pick 模拟器：v0.8 聚焦 BP 核心稳定性与竞技 Draft 操作体验；本地模式纯前端离线可用，在线房间与分享基于 Supabase。
 
 **在线使用**：https://caowenchen.github.io/ninja-bp-arena/ （GitHub Pages 自动部署）
 
@@ -13,6 +13,8 @@
 
 ## 功能
 
+- **v0.8 BP 强化**：旧 Ninja-only 规则进入统一的资源 Draft 规则模型；阶段与计时共用稳定 phaseKey，强化跨局 Ban / Lock、READY 阵容和比分校验；在线断线重连后以服务器状态恢复。
+- **竞技 Draft 操作**：当前行动、资源类型和比分更清楚；不可选卡片禁用并说明原因，支持搜索排序、键盘操作与移动端阵容抽屉；设置页可视化编辑规则并预览逐局流程。
 - **完整 BO3 流程**：Ban（蓝1 → 红2 → 蓝1）→ Pick（红1 → 蓝2 → 红2 → 蓝1）→ 阵容锁定 → 记录胜负 → 自动进入下一局，先胜 2 局结束整场
 - **规则核心约束**：被 Ban 忍者整场不可用；同一局双方不能重复选择；之前小局出过场的忍者整场禁用
 - **状态机驱动的 BP 引擎**：当前 Game / 阶段 / 行动方 / 步骤剩余数量全部由引擎推导，支持任意自定义序列
@@ -62,6 +64,7 @@ src/
 data/source/        # 三类 CSV、Source manifest 与 Stable ID Registry
 data/packs/default/ # 从 Source 确定性生成的内置 Demo Data Pack
 docs/DATA_PACK.md   # 数据包制作、版本、远程托管与素材规范
+docs/BP_ENGINE.md  # v0.8 规则、阶段、跨局与计时语义
 e2e/                # Playwright E2E（BO3 全流程 / 撤销 / 刷新恢复 / 移动端 / 坏数据）
 test/               # 单元测试（engine / importExport / validation）
 scripts/copy-404.mjs # GitHub Pages SPA 404 兜底

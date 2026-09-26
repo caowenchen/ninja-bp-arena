@@ -8,17 +8,24 @@ const SIDE_LABEL = { BLUE: '蓝方', RED: '红方' } as const
 /** 序列步骤条：整局 Ban/Pick 流程一览（已完成 / 进行中 / 待执行） */
 function SequenceStrip({ match }: { match: MatchState }) {
   const phase = getPhase(match)
+  const steps = phase.expanded.reduce<Array<{ step: (typeof phase.expanded)[number]; start: number; count: number }>>((groups, step, index) => {
+    const last = groups[groups.length - 1]
+    if (last?.step.stepIndex === step.stepIndex) last.count += 1
+    else groups.push({ step, start: index, count: 1 })
+    return groups
+  }, [])
   return (
-    <div className="flex flex-wrap items-center justify-center gap-1" aria-label="本局 BP 序列">
-      {phase.expanded.map((step, index) => {
-        const done = index < phase.totalDone
-        const current = index === phase.totalDone
+    <div className="flex max-h-24 flex-wrap items-center justify-center gap-1 overflow-y-auto" aria-label="本局 BP 序列">
+      {steps.map(({ step, start, count }) => {
+        const done = start + count <= phase.totalDone
+        const current = start <= phase.totalDone && phase.totalDone < start + count
         const isBan = step.action === 'BAN'
         return (
           <span
-            key={index}
-            title={`${SIDE_LABEL[step.side]} ${isBan ? '禁用' : '选择'}${RESOURCE_TYPE_LABEL[step.resourceType]}`}
-            className={`flex h-5 min-w-9 items-center justify-center rounded-sm px-1 text-[9px] font-bold transition-colors ${
+            key={step.stepIndex}
+            aria-current={current ? 'step' : undefined}
+            title={`${SIDE_LABEL[step.side]} ${isBan ? '禁用' : '选择'}${RESOURCE_TYPE_LABEL[step.resourceType]} ×${count} · ${done ? '已完成' : current ? '当前' : '待执行'}`}
+            className={`flex h-6 min-w-12 items-center justify-center rounded-sm px-1.5 text-[10px] font-bold transition-colors ${
               current
                 ? isBan
                   ? 'bg-side-red text-white ring-1 ring-side-red/60'
@@ -31,7 +38,7 @@ function SequenceStrip({ match }: { match: MatchState }) {
             }`}
           >
             <span className="opacity-70">{step.resourceType === 'NINJA' ? '忍' : step.resourceType === 'SECRET_SCROLL' ? '卷' : '灵'}</span>
-            {isBan ? '禁' : '选'}
+            {isBan ? '禁' : '选'}×{count}
             <span className="ml-0.5 opacity-70">{step.side === 'BLUE' ? '蓝' : '红'}</span>
           </span>
         )
@@ -89,6 +96,8 @@ export function BPStage({
         <span>BO{rule.bestOf}</span>
         <span className="text-ink-400">/</span>
         <span className="font-semibold text-gold">GAME {phase.gameNumber}</span>
+        <span className="text-ink-400">/</span>
+        <span>比分 蓝 {match.score.blue} : {match.score.red} 红</span>
         <span className="text-ink-400">/</span>
         <span className="max-w-[180px] truncate">{rule.name}</span>
       </div>

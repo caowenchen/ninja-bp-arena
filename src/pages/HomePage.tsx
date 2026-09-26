@@ -9,6 +9,8 @@ import { formatDateTime } from '@/utils/format'
 import { SIDE_TEXT } from '@/types/bp'
 import type { MatchState } from '@/types/match'
 import { getBuiltinUpdateNotice, useDataPackStore } from '@/dataPack/store'
+import { downloadTextFile } from '@/utils/clipboard'
+import { readRaw, STORAGE_KEYS } from '@/utils/storage'
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -16,6 +18,7 @@ export default function HomePage() {
   const continueMatch = useBPStore((s) => s.continueMatch)
   const deleteRecent = useBPStore((s) => s.deleteRecent)
   const currentMatch = useBPStore((s) => s.match)
+  const currentMatchCorrupt = useBPStore((s) => s.currentMatchCorrupt)
   const settings = useSettingsStore((s) => s.settings)
   const updateSettings = useSettingsStore((s) => s.update)
 
@@ -52,6 +55,13 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 pb-16">
+      {currentMatchCorrupt && <div role="alert" className="mt-4 rounded border border-gold-accent/50 bg-gold-accent/10 p-3 text-sm text-fog-100">
+        当前比赛数据损坏，已安全跳过。原始记录仍保留；可以先下载原始数据，再开始新比赛。
+        <button type="button" className="ml-2 underline" onClick={() => {
+          const raw = readRaw(STORAGE_KEYS.currentMatch)
+          if (raw) downloadTextFile('ninja-bp-corrupt-match.json', raw)
+        }}>下载原始数据</button>
+      </div>}
       {/* Hero：第一屏重点是「开始比赛」 */}
       <section className="bg-arena-grid bg-chakra-flow relative mt-5 overflow-hidden rounded-lg border border-border-muted px-6 py-14 text-center lg:py-20">
         <p className="mb-4 inline-block border border-gold-accent/40 bg-gold-accent/10 px-2.5 py-0.5 text-[11px] tracking-[0.3em] text-gold-accent">

@@ -3,7 +3,7 @@ import { SearchX } from 'lucide-react'
 import type { Ninja } from '@/types/ninja'
 import type { MatchState } from '@/types/match'
 import type { NinjaCardStatus } from '@/engine/bpEngine'
-import { getNinjaCardStatus } from '@/engine/bpEngine'
+import { canSelectNinja, getNinjaCardStatus } from '@/engine/bpEngine'
 import { getNewNinjaIds } from '@/dataPack/store'
 import { NinjaCard } from './NinjaCard'
 
@@ -23,16 +23,17 @@ interface NinjaGridProps {
   match: MatchState
   statusFilter?: StatusFilter
   onPick: (ninja: Ninja) => void
+  onInspect?: (ninja: Ninja) => void
   disabledReason?: string
 }
 
 /** 忍者选择网格：状态全部由引擎统一计算 */
-export function NinjaGrid({ ninjas, match, statusFilter = 'ALL', onPick, disabledReason }: NinjaGridProps) {
+export function NinjaGrid({ ninjas, match, statusFilter = 'ALL', onPick, onInspect, disabledReason }: NinjaGridProps) {
   const newIds = useMemo(() => getNewNinjaIds(), [])
   const cards = useMemo(
     () =>
       ninjas
-        .map((ninja) => ({ ninja, status: getNinjaCardStatus(match, ninja).status as NinjaCardStatus }))
+        .map((ninja) => ({ ninja, status: getNinjaCardStatus(match, ninja).status as NinjaCardStatus, selectable: canSelectNinja(match, ninja.id, ninja).allowed }))
         .filter(({ status }) => {
           if (statusFilter === 'ALL') return true
           if (statusFilter === 'PICKED') return status === 'BLUE_PICKED' || status === 'RED_PICKED'
@@ -58,7 +59,8 @@ export function NinjaGrid({ ninjas, match, statusFilter = 'ALL', onPick, disable
       aria-label="忍者资源列表"
       onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
-        const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-resource-card]')]
+        const selector = (document.activeElement as HTMLElement | null)?.hasAttribute('data-resource-inspect') ? '[data-resource-inspect]' : '[data-resource-card]:not(:disabled)'
+        const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>(selector)]
         const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
         if (current < 0) return
         const columns = window.innerWidth >= 1536 ? 6 : window.innerWidth >= 768 ? 5 : window.innerWidth >= 640 ? 4 : 3
@@ -67,8 +69,8 @@ export function NinjaGrid({ ninjas, match, statusFilter = 'ALL', onPick, disable
         if (target) { event.preventDefault(); target.focus() }
       }}
     >
-      {cards.map(({ ninja, status }) => (
-        <NinjaCard key={ninja.id} ninja={ninja} status={status} onPick={onPick} isNew={newIds.has(ninja.id)} disabledReason={disabledReason} />
+      {cards.map(({ ninja, status, selectable }) => (
+        <NinjaCard key={ninja.id} ninja={ninja} status={status} selectable={selectable} onPick={onPick} onInspect={onInspect} isNew={newIds.has(ninja.id)} disabledReason={disabledReason} />
       ))}
     </div>
   )

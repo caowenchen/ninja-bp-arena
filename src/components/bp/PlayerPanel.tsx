@@ -6,6 +6,7 @@ import { getPhase } from '@/engine/bpEngine'
 import { useNinjaLookup } from '@/hooks/useNinjaLookup'
 import { BanSlot } from './BanSlot'
 import { PickSlot } from './PickSlot'
+import { getResourceDraftRules, getPlayerResourceState } from '@bp-core'
 
 interface PlayerPanelProps {
   side: Side
@@ -29,10 +30,15 @@ export function PlayerPanel({ side }: PlayerPanelProps) {
     const game = match.games[match.games.length - 1]
     const player = side === 'BLUE' ? game.blue : game.red
     const steps = phase.expanded.filter((e) => e.side === side && e.resourceType === 'NINJA')
+    const ninjaDraft = getResourceDraftRules(match.rule).find((item) => item.resourceType === 'NINJA' && item.enabled)
+    const persistentBans = ninjaDraft?.banPersistence ? match.games.slice(0, -1).flatMap((past) => (side === 'BLUE' ? past.blue : past.red).bans) : []
+    const visibleBans = [...new Set([...persistentBans, ...player.bans])]
+    const banSlots = Math.max(steps.filter((e) => e.action === 'BAN').length, visibleBans.length)
+    const pickSlots = ninjaDraft?.slotsPerSide ?? steps.filter((e) => e.action === 'PICK').length
     return {
-      bans: steps.filter((e) => e.action === 'BAN').map((_, i) => player.bans[i]),
-      picks: steps.filter((e) => e.action === 'PICK').map((_, i) => player.picks[i]),
-      hasBanPhase: steps.some((e) => e.action === 'BAN'),
+      bans: Array.from({ length: banSlots }, (_, i) => visibleBans[i]),
+      picks: Array.from({ length: pickSlots }, (_, i) => player.picks[i]),
+      hasBanPhase: banSlots > 0,
       acting: phase.side === side && !phase.sequenceComplete,
     }
   }, [match, side])
@@ -44,7 +50,14 @@ export function PlayerPanel({ side }: PlayerPanelProps) {
   const teamColor = isBlue ? 'text-blue-team-soft' : 'text-red-team-soft'
   const game = match.games[match.games.length - 1]
   const player = side === 'BLUE' ? game.blue : game.red
-  const phase = getPhase(match)
+  const drafts = getResourceDraftRules(match.rule)
+  const lockedBefore = drafts.filter((draft) => draft.enabled && draft.crossGameLock).map((draft) => {
+    const ids = [...new Set(match.games.slice(0, -1).flatMap((past) => getPlayerResourceState(side === 'BLUE' ? past.blue : past.red, draft.resourceType).picks))]
+    const names = ids.map((id) => draft.resourceType === 'NINJA'
+      ? ninjaById(id)?.name ?? id
+      : source.matchResources?.[draft.resourceType]?.find((item) => item.id === id)?.name ?? id)
+    return { type: draft.resourceType, names }
+  }).filter((item) => item.names.length > 0)
 
   return (
     <aside
@@ -91,10 +104,12 @@ export function PlayerPanel({ side }: PlayerPanelProps) {
       </section>
 
       {(['SECRET_SCROLL', 'SUMMON'] as const).map((resourceType) => {
-        const slots = phase.expanded.filter((step) => step.side === side && step.resourceType === resourceType && step.action === 'PICK').length
+        const draft = drafts.find((item) => item.resourceType === resourceType && item.enabled)
+        const slots = draft?.slotsPerSide ?? 0
         if (!slots) return null
-        const ids = player.resources?.[resourceType]?.picks ?? []
+        const ids = getPlayerResourceState(player, resourceType).picks
         const lookup = new Map((source.matchResources?.[resourceType] ?? []).map((item) => [item.id, item.name]))
+        const bans = [...new Set(match.games.filter((past) => past.gameNumber === game.gameNumber || draft?.banPersistence).flatMap((past) => getPlayerResourceState(side === 'BLUE' ? past.blue : past.red, resourceType).bans))]
         return (
           <section key={resourceType}>
             <h4 className="mb-1.5 text-[9px] font-bold tracking-[0.25em] text-fog-600">
@@ -107,9 +122,14 @@ export function PlayerPanel({ side }: PlayerPanelProps) {
                 </div>
               ))}
             </div>
+            {bans.length > 0 && <p className="mt-1 text-[10px] text-fog-500">已 Ban：{bans.map((id) => lookup.get(id) ?? id).join('、')}</p>}
           </section>
         )
       })}
+      {lockedBefore.length > 0 && <details className="border-t border-border-muted pt-2 text-[10px] text-fog-500">
+        <summary className="cursor-pointer">跨局已用 / 锁定 · {lockedBefore.reduce((total, item) => total + item.names.length, 0)} 项</summary>
+        {lockedBefore.map((item) => <p key={item.type} className="mt-1">{item.type}：{item.names.join('、')}</p>)}
+      </details>}
     </aside>
   )
 }

@@ -25,16 +25,16 @@ describe('Pool Requirement Analyzer', () => {
     expect(getMinimumRequiredPoolSize(ruleWith({ usedNinjaLocked: false }))).toBe(10)
   })
 
-  it('Ban 不继承且每局重新 Ban：4 × 3 + 18 = 30', () => {
+  it('Ban 不继承且每局重新 Ban：只需当前局 4 Ban + 跨局 18 Pick = 22', () => {
     expect(
       getMinimumRequiredPoolSize(ruleWith({ banPersistence: false, banOnlyFirstGame: false })),
-    ).toBe(30)
+    ).toBe(22)
   })
 
-  it('Ban 每局重新执行但跨局继承：Ban 只计一次 → 22', () => {
+  it('Ban 每局重新执行且跨局继承：12 Ban + 18 Pick = 30', () => {
     expect(
       getMinimumRequiredPoolSize(ruleWith({ banPersistence: true, banOnlyFirstGame: false })),
-    ).toBe(22)
+    ).toBe(30)
   })
 
   it('自定义序列：Ban 蓝2红1=3，Pick 蓝2红2=4，BO3 锁定 → 3 + 12 = 15', () => {

@@ -20,7 +20,7 @@ import { useSettingsStore } from './settingsStore'
 import { buildMatchPackSnapshot } from '@/dataPack/store'
 import { compactMatchForHistory } from '@/dataPack/matchSnapshot'
 import { playSound } from '@/utils/sound'
-import { loadJSON, removeKey, saveJSON, STORAGE_KEYS } from '@/utils/storage'
+import { loadJSON, readRaw, removeKey, saveJSON, STORAGE_KEYS } from '@/utils/storage'
 import { toast } from './toastStore'
 import { useReplayStore } from '@/replay/replayStore'
 
@@ -34,6 +34,8 @@ import { useReplayStore } from '@/replay/replayStore'
  */
 
 const MAX_RECENT = 20
+const initialCurrentMatch = loadJSON<MatchState | null>(STORAGE_KEYS.currentMatch, null, (value) => validateMatchState(value))
+const initialCurrentMatchCorrupt = readRaw(STORAGE_KEYS.currentMatch) !== null && initialCurrentMatch === null
 
 interface OpResult {
   ok: boolean
@@ -56,6 +58,7 @@ function sanitizeMatchList(raw: unknown, source: string): MatchState[] {
 
 interface BPStore {
   match: MatchState | null
+  currentMatchCorrupt: boolean
   stacks: UndoStacks
   recentMatches: MatchState[]
 
@@ -108,7 +111,8 @@ function persistMatch(match: MatchState) {
 
 export const useBPStore = create<BPStore>()((set, get) => ({
   // 启动即恢复最近一场比赛：严格校验，损坏数据整体回退为 null
-  match: loadJSON<MatchState | null>(STORAGE_KEYS.currentMatch, null, (v) => validateMatchState(v)),
+  match: initialCurrentMatch,
+  currentMatchCorrupt: initialCurrentMatchCorrupt,
   stacks: emptyStacks(),
   recentMatches: sanitizeMatchList(loadJSON<unknown>(STORAGE_KEYS.recentMatches, []), 'recent_matches'),
 
@@ -118,12 +122,12 @@ export const useBPStore = create<BPStore>()((set, get) => ({
     // 之后数据包更新 / 忍者删除不影响进行中的比赛与历史显示
     const packSnapshot = buildMatchPackSnapshot()
     const match: MatchState = {
-      ...startMatch(createMatch(rule, bluePlayerName, redPlayerName)),
+      ...startMatch(createMatch(rule, bluePlayerName, redPlayerName, { id: crypto.randomUUID(), now: Date.now() }), { now: Date.now() }),
       ...(packSnapshot.dataPack ? { dataPack: packSnapshot.dataPack } : {}),
       ninjaSnapshot: packSnapshot.ninjaSnapshot,
       resourceSnapshot: packSnapshot.resourceSnapshot,
     }
-    set({ match, stacks: emptyStacks() })
+    set({ match, stacks: emptyStacks(), currentMatchCorrupt: false })
     persistMatch(match)
     return match
   },
@@ -139,8 +143,10 @@ export const useBPStore = create<BPStore>()((set, get) => ({
   selectNinja: (ninjaId) => {
     const match = get().match
     if (!match) return { ok: false, reason: '没有进行中的比赛' }
-    const ninja = useNinjaStore.getState().getById(ninjaId)
-    const result = selectNinja(match, ninjaId, ninja)
+    const ninja = match.resourceSnapshot?.ninjas.find((item) => item.id === ninjaId)
+      ?? match.ninjaSnapshot?.find((item) => item.id === ninjaId)
+      ?? useNinjaStore.getState().getById(ninjaId)
+    const result = selectNinja(match, ninjaId, ninja, { now: Date.now() })
     if (!result.ok || !result.state) return { ok: false, reason: result.reason }
     commit(result.state)
     const lastAction = result.state.history[result.state.history.length - 1]
@@ -153,7 +159,7 @@ export const useBPStore = create<BPStore>()((set, get) => ({
     const match = get().match
     if (!match) return { ok: false, reason: '没有进行中的比赛' }
     const resource = getResource(snapshotResources(match.resourceSnapshot), resourceType, resourceId)
-    const result = selectResource(match, resourceType, resourceId, resource)
+    const result = selectResource(match, resourceType, resourceId, resource, { now: Date.now() })
     if (!result.ok || !result.state) return { ok: false, reason: result.reason }
     commit(result.state)
     const lastAction = result.state.history[result.state.history.length - 1]
@@ -193,7 +199,7 @@ export const useBPStore = create<BPStore>()((set, get) => ({
   enterGame: () => {
     const match = get().match
     if (!match) return { ok: false, reason: '没有进行中的比赛' }
-    const result = enterGame(match)
+    const result = enterGame(match, { now: Date.now() })
     if (!result.ok || !result.state) return { ok: false, reason: result.reason }
     commit(result.state)
     return { ok: true }
@@ -202,7 +208,7 @@ export const useBPStore = create<BPStore>()((set, get) => ({
   setGameWinner: (side) => {
     const match = get().match
     if (!match) return { ok: false, reason: '没有进行中的比赛' }
-    const result = setGameWinner(match, side)
+    const result = setGameWinner(match, side, { now: Date.now() })
     if (!result.ok || !result.state) return { ok: false, reason: result.reason }
     commit(result.state)
     playSound('win', useSettingsStore.getState().settings.soundEnabled)
@@ -212,7 +218,7 @@ export const useBPStore = create<BPStore>()((set, get) => ({
   nextGame: () => {
     const match = get().match
     if (!match) return { ok: false, reason: '没有进行中的比赛' }
-    const result = nextGame(match)
+    const result = nextGame(match, { now: Date.now() })
     if (!result.ok || !result.state) return { ok: false, reason: result.reason }
     commit(result.state)
     return { ok: true }
@@ -221,7 +227,7 @@ export const useBPStore = create<BPStore>()((set, get) => ({
   resetCurrentGame: () => {
     const match = get().match
     if (!match) return { ok: false, reason: '没有进行中的比赛' }
-    const result = resetCurrentGame(match)
+    const result = resetCurrentGame(match, { now: Date.now() })
     if (!result.ok || !result.state) return { ok: false, reason: result.reason }
     commit(result.state)
     return { ok: true }
@@ -244,13 +250,13 @@ export const useBPStore = create<BPStore>()((set, get) => ({
   },
 
   clearCurrent: () => {
-    set({ match: null })
+    set({ match: null, currentMatchCorrupt: false })
     removeKey(STORAGE_KEYS.currentMatch)
   },
 
   restoreBackup: (currentMatch, recentMatches) => {
     const nextRecent = recentMatches.slice(0, MAX_RECENT)
-    set({ match: currentMatch, stacks: emptyStacks(), recentMatches: nextRecent })
+    set({ match: currentMatch, currentMatchCorrupt: false, stacks: emptyStacks(), recentMatches: nextRecent })
     if (currentMatch) saveJSON(STORAGE_KEYS.currentMatch, currentMatch)
     else removeKey(STORAGE_KEYS.currentMatch)
     saveJSON(STORAGE_KEYS.recentMatches, nextRecent)

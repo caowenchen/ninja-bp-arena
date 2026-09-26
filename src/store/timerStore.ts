@@ -25,7 +25,7 @@ interface TimerStore extends TimerSnapshot {
    * 同步阶段：phaseKey 未变化时保留原 deadline（刷新恢复 / 同步骤连续选择）；
    * 变化时生成新的 deadline。
    */
-  sync: (args: { phaseKey: string; seconds: number; enabled: boolean }) => void
+  sync: (args: { phaseKey: string; seconds: number; enabled: boolean; legacyPhaseKey?: string }) => void
   /** 「重新计时」：立即重建当前阶段的 deadline */
   restart: (seconds: number) => void
   clear: () => void
@@ -41,8 +41,14 @@ export const useTimerStore = create<TimerStore>()((set, get) => ({
   // 启动时读取上次会话的 { phaseKey, deadlineAt }；由 sync() 决定沿用或重建
   ...loadJSON<TimerSnapshot>(STORAGE_KEYS.bpTimer, { phaseKey: null, deadlineAt: null }, TIMER_VALIDATE),
 
-  sync: ({ phaseKey, seconds, enabled }) => {
+  sync: ({ phaseKey, seconds, enabled, legacyPhaseKey }) => {
     const current = get()
+    if (enabled && legacyPhaseKey && current.phaseKey === legacyPhaseKey && typeof current.deadlineAt === 'number') {
+      const migrated = { phaseKey, deadlineAt: current.deadlineAt }
+      set(migrated)
+      persist(migrated)
+      return
+    }
     if (!enabled) {
       if (current.phaseKey !== phaseKey || current.deadlineAt !== null) {
         const next = { phaseKey, deadlineAt: null }

@@ -54,8 +54,8 @@ async function expectNinjaLockedForWrongTurn(page: Page, name: string, waitingSi
   const card = page.getByRole('button', { name: `${name}（可选）—等待${waitingSide}方选择` })
   await expect(card).toBeVisible({ timeout: 15_000 })
   await expect(card).toHaveAttribute('aria-disabled', 'true')
+  await expect(card).toBeDisabled()
   await expect(card).toHaveAttribute('title', new RegExp(`等待${waitingSide}方选择`))
-  await card.click({ force: true })
   await expect(page.getByText(new RegExp(`${waitingSide}方禁用阶段`))).toBeVisible()
   await expect(card).toHaveAttribute('aria-disabled', 'true')
 }
@@ -109,6 +109,12 @@ test.describe.serial('在线 BO3 全流程', () => {
     // 三端实时同步
     await expect(red.getByRole('button', { name: /漩涡鸣人（已禁用）/ })).toBeVisible({ timeout: 15000 })
     await expect(observer.getByRole('button', { name: /漩涡鸣人（已禁用）/ })).toBeVisible({ timeout: 15000 })
+    // RED reloads during its own turn and receives the authoritative revision.
+    await red.reload()
+    await expect(red.getByText(/红方禁用阶段/)).toBeVisible({ timeout: 20_000 })
+    const blueRevision = await blue.evaluate(() => (window as unknown as { __nja: { getState: () => { revision: number } } }).__nja.getState().revision)
+    const redRevision = await red.evaluate(() => (window as unknown as { __nja: { getState: () => { revision: number } } }).__nja.getState().revision)
+    expect(redRevision).toBe(blueRevision)
   })
 
   test('撤销请求：蓝方申请 → 红方实时收到 → 确认 → 双方回退', async () => {
@@ -122,8 +128,15 @@ test.describe.serial('在线 BO3 全流程', () => {
     await expectNinjaLockedForWrongTurn(red, '漩涡鸣人', '蓝')
 
     // 再执行不同忍者
-    await clickNinja(blue, '宇智波佐助', '已禁用')
+    const beforeRevision = await blue.evaluate(() => (window as unknown as { __nja: { getState: () => { revision: number } } }).__nja.getState().revision)
+    await blue.getByRole('button', { name: /^宇智波佐助（可选）/ }).evaluate((element) => {
+      const button = element as HTMLButtonElement
+      button.click()
+      button.click()
+    })
     await expect(blue.getByRole('button', { name: /宇智波佐助（已禁用）/ })).toBeVisible({ timeout: 15000 })
+    const afterRevision = await blue.evaluate(() => (window as unknown as { __nja: { getState: () => { revision: number } } }).__nja.getState().revision)
+    expect(afterRevision).toBe(beforeRevision + 1)
   })
 
   test('Game1 完整 BP + 蓝胜', async () => {

@@ -1,7 +1,7 @@
 import type { BPActionType, BattleRule, DraftResourceBase, DraftResourceType, PlayerGameState, Side } from './types.ts'
 import type { EngineResult, GameState, MatchState } from './types.ts'
 import type { Ninja } from './types.ts'
-import { expandSequence, getResourceDraftRules, type ExpandedAction } from './ruleEngine.ts'
+import { expandSequence, getResourceDraftRules, normalizeBattleRule, type ExpandedAction } from './ruleEngine.ts'
 import { RESOURCE_TYPE_LABEL } from './resourceRegistry.ts'
 
 /**
@@ -27,8 +27,10 @@ export function cloneMatch<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function makeId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+export interface TransitionContext { now: number; actionId?: string }
+
+function nextTimestamp(m: MatchState, context?: TransitionContext): number {
+  return context ? Math.max(context.now, m.updatedAt + 1) : m.updatedAt + 1
 }
 
 function createGameState(gameNumber: number): GameState {
@@ -91,12 +93,12 @@ function createFollowingGameState(m: MatchState, gameNumber: number): GameState 
 // 创建 / 开始
 // ---------------------------------------------------------------------------
 
-export function createMatch(rule: BattleRule, bluePlayerName = '', redPlayerName = ''): MatchState {
-  const now = Date.now()
+export function createMatch(rule: BattleRule, bluePlayerName = '', redPlayerName = '', identity?: { id: string; now: number }): MatchState {
+  const now = identity?.now ?? 0
   return {
-    id: makeId('match'),
+    id: identity?.id ?? `match-${rule.id}`,
     // 规则深拷贝进比赛：之后修改规则模板不影响进行中的比赛
-    rule: cloneMatch(rule),
+    rule: { ...cloneMatch(rule), resourceDrafts: cloneMatch(normalizeBattleRule(rule).resourceDrafts) },
     bluePlayerName: bluePlayerName.trim() || '蓝方',
     redPlayerName: redPlayerName.trim() || '红方',
     score: { blue: 0, red: 0 },
@@ -110,14 +112,15 @@ export function createMatch(rule: BattleRule, bluePlayerName = '', redPlayerName
 }
 
 /** 从 SETUP 进入正式比赛（重置比分与第一局） */
-export function startMatch(m: MatchState): MatchState {
+export function startMatch(m: MatchState, context?: TransitionContext): MatchState {
   return {
     ...cloneMatch(m),
+    score: { blue: 0, red: 0 },
     status: 'IN_PROGRESS',
     currentGame: 1,
     games: [createGameState(1)],
     history: [],
-    updatedAt: Date.now(),
+    updatedAt: nextTimestamp(m, context),
   }
 }
 
@@ -126,7 +129,7 @@ export function startMatch(m: MatchState): MatchState {
  * 重置比分、局数、历史、Ban/Pick、USED、计时器等全部比赛运行状态。
  * 在线 RESET_MATCH 必须使用本函数（注意 startMatch 不重置比分）。
  */
-export function restartMatch(m: MatchState): MatchState {
+export function restartMatch(m: MatchState, context?: TransitionContext): MatchState {
   return {
     ...cloneMatch(m),
     score: { blue: 0, red: 0 },
@@ -135,7 +138,7 @@ export function restartMatch(m: MatchState): MatchState {
     history: [],
     status: 'SETUP',
     timer: undefined,
-    updatedAt: Date.now(),
+    updatedAt: nextTimestamp(m, context),
   }
 }
 
@@ -151,25 +154,21 @@ export function getCurrentGame(m: MatchState): GameState {
  *  注意：先把两段步骤数组合并成一条序列再展开，
  *  保证 stepIndex 在整局内全局唯一（否则 Ban/Pick 两段的步骤编号会重叠）。 */
 export function getGameSequence(m: MatchState, gameNumber: number): ExpandedAction[] {
-  if (m.rule.resourceDrafts?.length) {
-    const expanded: ExpandedAction[] = []
-    let stepOffset = 0
-    for (const draft of getResourceDraftRules(m.rule)) {
-      if (!draft.enabled || (gameNumber > 1 && !draft.resetEachGame)) continue
-      const steps = gameNumber > 1 && draft.banOnlyFirstGame
-        ? draft.sequence.filter((step) => step.action !== 'BAN')
-        : draft.sequence
-      expanded.push(...expandSequence(steps, draft.resourceType, stepOffset))
-      stepOffset += steps.length
-    }
-    return expanded
+  const expanded: ExpandedAction[] = []
+  let stepOffset = 0
+  for (const draft of normalizeBattleRule(m.rule).resourceDrafts) {
+    if (!draft.enabled || (gameNumber > 1 && !draft.resetEachGame)) continue
+    const steps = gameNumber > 1 && draft.banOnlyFirstGame
+      ? draft.sequence.filter((step) => step.action !== 'BAN')
+      : draft.sequence
+    expanded.push(...expandSequence(steps, draft.resourceType, stepOffset))
+    stepOffset += steps.length
   }
-  const useBans = gameNumber === 1 || !m.rule.banOnlyFirstGame
-  const banSteps = useBans ? m.rule.banSequence : []
-  return expandSequence([...banSteps, ...m.rule.pickSequence])
+  return expanded
 }
 
 export interface PhaseInfo {
+  phaseKey: string
   gameNumber: number
   status: 'BANNING' | 'PICKING' | 'READY' | 'PLAYING' | 'COMPLETED'
   /** 当前步骤的动作；序列完成后为 null */
@@ -196,7 +195,7 @@ export interface PhaseInfo {
  * 推导当前阶段。已完成的动作数 = bans + picks，
  * 与展开序列逐一对应，因此撤销之后阶段自然回退，永不错乱。
  */
-export function getPhase(m: MatchState): PhaseInfo {
+export function getCurrentDraftPhase(m: MatchState): PhaseInfo {
   const game = getCurrentGame(m)
   const expanded = getGameSequence(m, game.gameNumber)
   const totalDone = countSequenceActions(game, expanded)
@@ -211,6 +210,7 @@ export function getPhase(m: MatchState): PhaseInfo {
     const status = game.winner ? 'COMPLETED' : game.started ? 'PLAYING' : 'READY'
     return {
       ...base,
+      phaseKey: `${m.id}:G${game.gameNumber}:DONE:${status}`,
       status,
       action: null,
       resourceType: null,
@@ -230,6 +230,7 @@ export function getPhase(m: MatchState): PhaseInfo {
   const doneInStep = totalDone - stepStart
   return {
     ...base,
+    phaseKey: `${m.id}:G${game.gameNumber}:${current.resourceType}:${current.action}:${current.side}:S${current.stepIndex}`,
     status: current.action === 'BAN' ? 'BANNING' : 'PICKING',
     action: current.action,
     resourceType: current.resourceType,
@@ -241,6 +242,9 @@ export function getPhase(m: MatchState): PhaseInfo {
     sequenceComplete: false,
   }
 }
+
+/** Kept as an adapter for existing UI callers. */
+export const getPhase = getCurrentDraftPhase
 
 /** 之前小局已经出场的忍者（不含当前局） */
 export function getUsedNinjas(m: MatchState): { blue: string[]; red: string[] } {
@@ -336,40 +340,44 @@ export function canSelectResource(
 }
 
 /** 忍者卡片展示状态（视觉层） */
-export type NinjaCardStatus = 'AVAILABLE' | 'BANNED' | 'BLUE_PICKED' | 'RED_PICKED' | 'USED' | 'DISABLED'
+export type NinjaCardStatus = 'AVAILABLE' | 'BANNED' | 'BLUE_PICKED' | 'RED_PICKED' | 'USED' | 'DISABLED' | 'LOCKED'
 
 export interface NinjaStatusInfo {
   status: NinjaCardStatus
   reason: string
 }
 
-export function getNinjaCardStatus(m: MatchState, ninja: Ninja): NinjaStatusInfo {
-  if (!ninja.enabled || ninja.deprecated) return { status: 'DISABLED', reason: '该忍者已被停用' }
-
+export function getResourceCardStatus(m: MatchState, resourceType: DraftResourceType, resource: Pick<DraftResourceBase, 'id' | 'enabled' | 'deprecated'>): NinjaStatusInfo {
+  if (!resource.enabled || resource.deprecated) return { status: 'DISABLED', reason: '该资源已被停用' }
   const game = getCurrentGame(m)
   const currentNumber = game.gameNumber
-  const draft = getResourceDraftRules(m.rule).find((item) => item.resourceType === 'NINJA')
+  const draft = getResourceDraftRules(m.rule).find((item) => item.resourceType === resourceType)
 
   for (const g of m.games) {
-    const banned = g.blue.bans.includes(ninja.id) || g.red.bans.includes(ninja.id)
+    const banned = getPlayerResourceState(g.blue, resourceType).bans.includes(resource.id) || getPlayerResourceState(g.red, resourceType).bans.includes(resource.id)
     if (banned && (g.gameNumber === currentNumber || draft?.banPersistence)) {
-      return { status: 'BANNED', reason: '该忍者已被禁用' }
+      return { status: 'BANNED', reason: '该资源已被禁用' }
     }
   }
 
-  if (game.blue.picks.includes(ninja.id)) return { status: 'BLUE_PICKED', reason: '蓝方已选择' }
-  if (game.red.picks.includes(ninja.id)) return { status: 'RED_PICKED', reason: '红方已选择' }
+  if (getPlayerResourceState(game.blue, resourceType).picks.includes(resource.id)) return { status: 'BLUE_PICKED', reason: '蓝方已选择' }
+  if (getPlayerResourceState(game.red, resourceType).picks.includes(resource.id)) return { status: 'RED_PICKED', reason: '红方已选择' }
 
   if (draft?.crossGameLock) {
     for (const g of m.games) {
       if (g.gameNumber === currentNumber) continue
-      if (g.blue.picks.includes(ninja.id) || g.red.picks.includes(ninja.id)) {
-        return { status: 'USED', reason: '该忍者已在之前小局出战' }
+      if (getPlayerResourceState(g.blue, resourceType).picks.includes(resource.id) || getPlayerResourceState(g.red, resourceType).picks.includes(resource.id)) {
+        return { status: 'USED', reason: '该资源已在之前小局使用' }
       }
     }
   }
 
+  if (getPhase(m).resourceType !== resourceType || m.status !== 'IN_PROGRESS') return { status: 'LOCKED', reason: '当前非该资源阶段' }
   return { status: 'AVAILABLE', reason: '' }
+}
+
+export function getNinjaCardStatus(m: MatchState, ninja: Ninja): NinjaStatusInfo {
+  return getResourceCardStatus(m, 'NINJA', ninja)
 }
 
 export function getAvailableNinjas(m: MatchState, pool: Pick<Ninja, 'id' | 'enabled'>[]): Pick<Ninja, 'id' | 'enabled'>[] {
@@ -391,8 +399,8 @@ const fail = (reason: string): EngineResult => ({ ok: false, reason })
  * 按当前阶段执行 Ban 或 Pick：阶段是 BAN 就禁用，是 PICK 就选择。
  * 点击哪个忍者由 UI 决定，属于哪一方由引擎的阶段推导决定。
  */
-export function selectNinja(m: MatchState, ninjaId: string, ninja?: Pick<Ninja, 'id' | 'enabled'>): EngineResult {
-  return selectResource(m, 'NINJA', ninjaId, ninja)
+export function selectNinja(m: MatchState, ninjaId: string, ninja?: Pick<Ninja, 'id' | 'enabled'>, context?: TransitionContext): EngineResult {
+  return selectResource(m, 'NINJA', ninjaId, ninja, context)
 }
 
 export function selectResource(
@@ -400,6 +408,7 @@ export function selectResource(
   resourceType: DraftResourceType,
   resourceId: string,
   resource?: Pick<DraftResourceBase, 'id' | 'enabled' | 'deprecated'>,
+  context?: TransitionContext,
 ): EngineResult {
   const check = canSelectResource(m, resourceType, resourceId, resource)
   if (!check.allowed) return fail(check.reason ?? `无法选择${RESOURCE_TYPE_LABEL[resourceType]}`)
@@ -414,18 +423,19 @@ export function selectResource(
   if (action === 'BAN') player.bans.push(resourceId)
   else player.picks.push(resourceId)
 
+  const timestamp = nextTimestamp(m, context)
   next.history.push({
-    id: makeId('act'),
+    id: context?.actionId ?? `act-${m.id}-${m.history.length}`,
     gameNumber: game.gameNumber,
     side,
     action,
     ninjaId: resourceId,
     resourceType,
     resourceId,
-    timestamp: Date.now(),
+    timestamp,
     sequenceIndex: phase.totalDone,
   })
-  next.updatedAt = Date.now()
+  next.updatedAt = timestamp
   return { ok: true, state: next }
 }
 
@@ -434,25 +444,54 @@ export const banNinja = selectNinja
 export const pickNinja = selectNinja
 
 /** GAME READY → 进入比赛 */
-export function enterGame(m: MatchState): EngineResult {
+export function enterGame(m: MatchState, context?: TransitionContext): EngineResult {
   if (m.status !== 'IN_PROGRESS') return fail('比赛未在进行中')
   const game = getCurrentGame(m)
   if (game.winner) return fail('本局已结束')
   const phase = getPhase(m)
   if (!phase.sequenceComplete) return fail('BP 尚未完成')
   if (game.started) return fail('本局已进入比赛')
+  for (const draft of getResourceDraftRules(m.rule)) {
+    if (!draft.enabled) continue
+    const blue = getPlayerResourceState(game.blue, draft.resourceType).picks
+    const red = getPlayerResourceState(game.red, draft.resourceType).picks
+    if (blue.length !== draft.slotsPerSide || red.length !== draft.slotsPerSide) return fail('双方阵容槽位尚未填满')
+    if (new Set(blue).size !== blue.length || new Set(red).size !== red.length) return fail('阵容包含重复资源')
+    if (draft.uniqueAcrossSides && blue.some((id) => red.includes(id))) return fail('双方阵容包含重复资源')
+    for (const id of [...blue, ...red]) {
+      const check = canUseFinalResource(m, draft.resourceType, id)
+      if (!check.allowed) return fail(check.reason ?? '阵容包含不可用资源')
+    }
+  }
   const next = cloneMatch(m)
   getCurrentGame(next).started = true
-  next.updatedAt = Date.now()
+  next.updatedAt = nextTimestamp(m, context)
   return { ok: true, state: next }
 }
 
+function canUseFinalResource(m: MatchState, resourceType: DraftResourceType, id: string): SelectCheck {
+  const draft = getResourceDraftRules(m.rule).find((item) => item.resourceType === resourceType)
+  const game = getCurrentGame(m)
+  for (const past of m.games) {
+    if (past.gameNumber === game.gameNumber || draft?.banPersistence) {
+      if (getPlayerResourceState(past.blue, resourceType).bans.includes(id) || getPlayerResourceState(past.red, resourceType).bans.includes(id)) return deny('阵容包含已禁用资源')
+    }
+    if (past.gameNumber < game.gameNumber && draft?.crossGameLock) {
+      if (getPlayerResourceState(past.blue, resourceType).picks.includes(id) || getPlayerResourceState(past.red, resourceType).picks.includes(id)) return deny('阵容包含跨局锁定资源')
+    }
+  }
+  return ALLOW
+}
+
 /** 记录本局胜者（比分 +1；满足条件则整场结束） */
-export function setGameWinner(m: MatchState, side: Side): EngineResult {
+export function setGameWinner(m: MatchState, side: Side, context?: TransitionContext): EngineResult {
   if (m.status === 'MATCH_FINISHED') return fail('比赛已经结束')
   const game = getCurrentGame(m)
   if (!game.started) return fail('本局尚未进入比赛')
   if (game.winner) return fail('本局已记录胜负')
+  const completedBlue = m.games.filter((item) => item.winner === 'BLUE').length
+  const completedRed = m.games.filter((item) => item.winner === 'RED').length
+  if (m.score.blue !== completedBlue || m.score.red !== completedRed) return fail('比分与已完成小局不一致')
 
   const next = cloneMatch(m)
   getCurrentGame(next).winner = side
@@ -462,12 +501,12 @@ export function setGameWinner(m: MatchState, side: Side): EngineResult {
   const reachedWins = next.score.blue >= next.rule.winsRequired || next.score.red >= next.rule.winsRequired
   const noGamesLeft = next.currentGame >= next.rule.bestOf
   if (reachedWins || noGamesLeft) next.status = 'MATCH_FINISHED'
-  next.updatedAt = Date.now()
+  next.updatedAt = nextTimestamp(m, context)
   return { ok: true, state: next }
 }
 
 /** 进入下一局（保持 Ban 与已使用忍者） */
-export function nextGame(m: MatchState): EngineResult {
+export function nextGame(m: MatchState, context?: TransitionContext): EngineResult {
   if (m.status === 'MATCH_FINISHED') return fail('比赛已经结束')
   const game = getCurrentGame(m)
   if (!game.winner) return fail('本局尚未记录胜负')
@@ -476,12 +515,12 @@ export function nextGame(m: MatchState): EngineResult {
   const next = cloneMatch(m)
   next.currentGame += 1
   next.games.push(createFollowingGameState(m, next.currentGame))
-  next.updatedAt = Date.now()
+  next.updatedAt = nextTimestamp(m, context)
   return { ok: true, state: next }
 }
 
 /** 重做本局 BP（尚未记录胜负时可用） */
-export function resetCurrentGame(m: MatchState): EngineResult {
+export function resetCurrentGame(m: MatchState, context?: TransitionContext): EngineResult {
   const game = getCurrentGame(m)
   if (game.winner) return fail('本局已记录胜负，请使用撤销')
   const doneCount = countSequenceActions(game, getGameSequence(m, game.gameNumber))
@@ -495,7 +534,7 @@ export function resetCurrentGame(m: MatchState): EngineResult {
   const g = next.games[gameIndex] = clean
   g.started = false
   next.history = next.history.filter((h) => h.gameNumber !== g.gameNumber)
-  next.updatedAt = Date.now()
+  next.updatedAt = nextTimestamp(m, context)
   return { ok: true, state: next }
 }
 
@@ -506,7 +545,7 @@ export function resetCurrentGame(m: MatchState): EngineResult {
  * 最近一条 Ban / Pick；若最后事件是胜负/换局，则不做回退（第一版约束，
  * 保证 BP 正确性优先）。本地模式的撤销仍使用完整快照（historyEngine.undo）。
  */
-export function undoLastAction(m: MatchState): EngineResult {
+export function undoLastAction(m: MatchState, context?: TransitionContext): EngineResult {
   if (m.status === 'MATCH_FINISHED') return fail('比赛已经结束')
   if (m.history.length === 0) return fail('没有可撤销的操作')
 
@@ -525,7 +564,7 @@ export function undoLastAction(m: MatchState): EngineResult {
   arr.splice(idx, 1)
 
   next.history = next.history.slice(0, -1)
-  next.updatedAt = Date.now()
+  next.updatedAt = nextTimestamp(m, context)
   return { ok: true, state: next }
 }
 
@@ -535,18 +574,18 @@ export function undoLastAction(m: MatchState): EngineResult {
 
 /** 与客户端一致的阶段标识：phaseKey 变化才应重建 deadline */
 export function computeTimerPhaseKey(m: MatchState): string {
-  const phase = getPhase(m)
-  return `${m.id}:G${phase.gameNumber}:${phase.sequenceComplete ? 'DONE' : `${phase.resourceType}:S${phase.stepIndex ?? 0}`}`
+  return getCurrentDraftPhase(m).phaseKey
 }
 
 /** 为新状态重建服务器倒计时（phaseKey 变化时调用；seconds 取自规则） */
 export function rebuildTimer(m: MatchState, now: number): MatchState {
   if (!m.rule.timerEnabled) return m
+  const phase = getCurrentDraftPhase(m)
   return {
     ...m,
     timer: {
-      phaseKey: computeTimerPhaseKey(m),
-      deadlineAt: now + (getResourceDraftRules(m.rule).find((item) => item.resourceType === getPhase(m).resourceType)?.timerSeconds ?? m.rule.timerSeconds) * 1000,
+      phaseKey: phase.phaseKey,
+      deadlineAt: phase.sequenceComplete ? null : now + (getResourceDraftRules(m.rule).find((item) => item.resourceType === phase.resourceType)?.timerSeconds ?? m.rule.timerSeconds) * 1000,
       timedOut: false,
     },
   }

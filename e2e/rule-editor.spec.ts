@@ -1,0 +1,27 @@
+import { expect, test } from '@playwright/test'
+
+test('Rule Editor previews all games and blocks invalid sequences and insufficient pools', async ({ page }) => {
+  await page.goto('/settings')
+  await page.getByRole('combobox', { name: '模板' }).selectOption('FULL')
+  await expect(page.getByText('GAME 3', { exact: true })).toBeVisible()
+  await page.getByRole('combobox', { name: '赛制' }).selectOption('5')
+  await expect(page.getByText('GAME 5', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '保存规则' })).toBeDisabled()
+  await expect(page.getByRole('alert')).toContainText('ninjas 需要至少 34')
+
+  await page.getByRole('combobox', { name: '赛制' }).selectOption('3')
+  const scrollSection = page.locator('section').filter({ has: page.getByRole('heading', { name: '秘卷', exact: true }) }).last()
+  await scrollSection.getByLabel('每方上场槽位').fill('3')
+  await expect(page.getByRole('button', { name: '保存规则' })).toBeDisabled()
+  await scrollSection.getByLabel('每方上场槽位').fill('2')
+  await expect(page.getByRole('button', { name: '保存规则' })).toBeEnabled()
+  await page.getByRole('button', { name: '展开高级步骤编辑' }).click()
+  await page.getByLabel('秘卷第1步数量').fill('0')
+  await expect(page.getByRole('button', { name: '保存规则' })).toBeDisabled()
+  await page.getByLabel('秘卷第1步数量').fill('2')
+  await expect(page.getByRole('button', { name: '保存规则' })).toBeEnabled()
+  await page.getByRole('button', { name: '保存规则' }).click()
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: '模板' })).toHaveValue('CUSTOM')
+  await expect(page.getByText('GAME 3', { exact: true })).toBeVisible()
+})

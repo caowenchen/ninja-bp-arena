@@ -1,4 +1,4 @@
-import type { BPActionType, BPSequenceStep, BattleRule, DraftResourceType, ResourceDraftRule, Side } from './types.ts'
+import type { BPActionType, BPSequenceStep, BattleRule, DraftResourceType, NormalizedBattleRule, ResourceDraftRule, Side } from './types.ts'
 
 /**
  * 规则引擎：负责 BP 序列的展开与校验。
@@ -26,20 +26,31 @@ export function expandSequence(steps: BPSequenceStep[], resourceType: DraftResou
   return out
 }
 
-/** 将 v0.4 BattleRule 投影成 v0.5 通用规则，确保 Ninja-only 行为字节级兼容。 */
-export function getResourceDraftRules(rule: BattleRule): ResourceDraftRule[] {
-  if (Array.isArray(rule.resourceDrafts) && rule.resourceDrafts.length > 0) return rule.resourceDrafts
-  return [{
-    resourceType: 'NINJA',
-    enabled: true,
-    slotsPerSide: rule.picksPerPlayer,
-    sequence: [...rule.banSequence, ...rule.pickSequence],
-    crossGameLock: rule.usedNinjaLocked,
-    uniqueAcrossSides: true,
-    banPersistence: rule.banPersistence,
-    banOnlyFirstGame: rule.banOnlyFirstGame,
-    resetEachGame: true,
-  }]
+/** One runtime representation for both legacy Ninja-only and resource rules. */
+export function normalizeBattleRule(rule: BattleRule | NormalizedBattleRule): NormalizedBattleRule {
+  const drafts = Array.isArray(rule.resourceDrafts) && rule.resourceDrafts.length > 0
+    ? rule.resourceDrafts
+    : [{
+        resourceType: 'NINJA' as const,
+        enabled: true,
+        slotsPerSide: (rule as BattleRule).picksPerPlayer,
+        sequence: [...(rule as BattleRule).banSequence, ...(rule as BattleRule).pickSequence],
+        crossGameLock: (rule as BattleRule).usedNinjaLocked,
+        uniqueAcrossSides: true,
+        banPersistence: (rule as BattleRule).banPersistence,
+        banOnlyFirstGame: (rule as BattleRule).banOnlyFirstGame,
+        resetEachGame: true,
+      }]
+  return {
+    id: rule.id, name: rule.name, version: rule.version,
+    bestOf: rule.bestOf, winsRequired: rule.winsRequired,
+    timerEnabled: rule.timerEnabled, timerSeconds: rule.timerSeconds,
+    resourceDrafts: drafts,
+  }
+}
+
+export function getResourceDraftRules(rule: BattleRule | NormalizedBattleRule): ResourceDraftRule[] {
+  return normalizeBattleRule(rule).resourceDrafts
 }
 
 const SIDE_TEXT: Record<Side, string> = { BLUE: '蓝方', RED: '红方' }
@@ -66,7 +77,7 @@ export function parseSequenceSteps(input: unknown, label: string, expectedAction
   if (!Array.isArray(input)) {
     return { errors: [`${label} 必须是数组`] }
   }
-  if (input.length === 0) {
+  if (input.length === 0 && expectedAction === 'PICK') {
     errors.push(`${label} 不能为空`)
   }
   const steps: BPSequenceStep[] = []
@@ -107,41 +118,59 @@ export function parseSequenceSteps(input: unknown, label: string, expectedAction
 export function validateBattleRule(rule: BattleRule): string[] {
   const errors: string[] = []
   if (![1, 3, 5, 7].includes(rule.bestOf)) errors.push('赛制 bestOf 只支持 1 / 3 / 5 / 7')
-  if (!Number.isInteger(rule.winsRequired) || rule.winsRequired < 1 || rule.winsRequired > rule.bestOf) {
-    errors.push('winsRequired 必须是 1 ~ bestOf 的整数')
-  }
+  if (rule.winsRequired !== (rule.bestOf + 1) / 2) errors.push('winsRequired 必须等于过半胜场')
+  if (typeof rule.timerEnabled !== 'boolean') errors.push('timerEnabled 必须是 boolean')
   if (!Number.isInteger(rule.timerSeconds) || rule.timerSeconds < 5 || rule.timerSeconds > 600) {
     errors.push('倒计时秒数必须在 5 ~ 600 之间')
   }
-  const ban = parseSequenceSteps(rule.banSequence, 'banSequence', 'BAN')
-  const pick = parseSequenceSteps(rule.pickSequence, 'pickSequence', 'PICK')
-  errors.push(...ban.errors, ...pick.errors)
-  if (ban.steps && pick.steps) {
-    const totalPicks = pick.steps.reduce((sum, s) => sum + s.count, 0)
-    const bluePicks = pick.steps.filter((s) => s.side === 'BLUE').reduce((sum, s) => sum + s.count, 0)
-    if (totalPicks <= 0) errors.push('pickSequence 至少要有一次选择')
-    if (bluePicks * 2 !== totalPicks) errors.push('当前引擎要求双方 Pick 总数相等（双方上场人数一致）')
+  if (!rule.resourceDrafts) {
+    const ban = parseSequenceSteps(rule.banSequence, 'banSequence', 'BAN')
+    const pick = parseSequenceSteps(rule.pickSequence, 'pickSequence', 'PICK')
+    errors.push(...ban.errors, ...pick.errors)
+    if (!Number.isInteger(rule.picksPerPlayer) || rule.picksPerPlayer < 1) errors.push('picksPerPlayer 必须大于 0')
+    if (!Number.isInteger(rule.bansPerPlayer) || rule.bansPerPlayer < 0) errors.push('bansPerPlayer 必须为非负整数')
+    if (ban.steps && pick.steps) {
+      for (const side of ['BLUE', 'RED'] as const) {
+        if (pick.steps.filter((s) => s.side === side).reduce((sum, s) => sum + s.count, 0) !== rule.picksPerPlayer) errors.push(`${side} 的 PICK 数必须等于 picksPerPlayer`)
+        if (ban.steps.filter((s) => s.side === side).reduce((sum, s) => sum + s.count, 0) !== rule.bansPerPlayer) errors.push(`${side} 的 BAN 数必须等于 bansPerPlayer`)
+      }
+    }
   }
   if (rule.resourceDrafts !== undefined) {
     if (!Array.isArray(rule.resourceDrafts) || rule.resourceDrafts.length === 0) {
       errors.push('resourceDrafts 必须是非空数组')
     } else {
       const seen = new Set<DraftResourceType>()
+      let enabledCount = 0
       for (const [index, draft] of rule.resourceDrafts.entries()) {
         const label = `resourceDrafts[${index}]`
+        if (!draft || typeof draft !== 'object') {
+          errors.push(`${label} 格式错误`)
+          continue
+        }
         if (!['NINJA', 'SECRET_SCROLL', 'SUMMON'].includes(draft.resourceType)) errors.push(`${label}.resourceType 非法`)
         if (seen.has(draft.resourceType)) errors.push(`${label}.resourceType 重复`)
         seen.add(draft.resourceType)
         if (typeof draft.enabled !== 'boolean') errors.push(`${label}.enabled 必须是 boolean`)
-        if (!Number.isInteger(draft.slotsPerSide) || draft.slotsPerSide < 0 || draft.slotsPerSide > 12) {
-          errors.push(`${label}.slotsPerSide 必须是 0~12 的整数`)
+        if (draft.enabled) enabledCount += 1
+        if (typeof draft.crossGameLock !== 'boolean' || typeof draft.uniqueAcrossSides !== 'boolean' || typeof draft.banPersistence !== 'boolean' || typeof draft.resetEachGame !== 'boolean') errors.push(`${label} 的锁定配置必须是 boolean`)
+        if (draft.banOnlyFirstGame !== undefined && typeof draft.banOnlyFirstGame !== 'boolean') errors.push(`${label}.banOnlyFirstGame 必须是 boolean`)
+        if (!Number.isInteger(draft.slotsPerSide) || draft.slotsPerSide < (draft.enabled ? 1 : 0) || draft.slotsPerSide > 12) {
+          errors.push(`${label}.slotsPerSide 必须是 ${draft.enabled ? '1' : '0'}~12 的整数`)
         }
         if (draft.timerSeconds !== undefined && (!Number.isInteger(draft.timerSeconds) || draft.timerSeconds < 5 || draft.timerSeconds > 600)) {
           errors.push(`${label}.timerSeconds 必须是 5~600 的整数`)
         }
-        if (!Array.isArray(draft.sequence)) errors.push(`${label}.sequence 必须是数组`)
+        if (!Array.isArray(draft.sequence) || (draft.enabled && draft.sequence.length === 0)) errors.push(`${label}.sequence 必须是非空数组`)
         else {
+          if (draft.sequence.some((step) => !step || typeof step !== 'object' || !['BLUE', 'RED'].includes(step.side) || !['BAN', 'PICK'].includes(step.action) || !Number.isInteger(step.count) || step.count < 1 || step.count > 12)) {
+            errors.push(`${label}.sequence 包含非法步骤`)
+            continue
+          }
+          if (draft.enabled && !draft.resetEachGame && draft.crossGameLock && rule.bestOf > 1) errors.push(`${label} 继承阵容不能同时启用跨局锁定`)
+          if (draft.enabled && !draft.resetEachGame && !draft.banPersistence && draft.sequence.some((step) => step.action === 'BAN') && rule.bestOf > 1) errors.push(`${label} 继承 Ban 时必须启用跨局 Ban 持续`)
           const picks = draft.sequence.filter((step) => step.action === 'PICK')
+          if (draft.enabled && draft.sequence.some((step, stepIndex) => step.action === 'BAN' && draft.sequence.slice(0, stepIndex).some((prior) => prior.action === 'PICK'))) errors.push(`${label}.sequence 不能在 PICK 后执行 BAN`)
           const blue = picks.filter((step) => step.side === 'BLUE').reduce((sum, step) => sum + step.count, 0)
           const red = picks.filter((step) => step.side === 'RED').reduce((sum, step) => sum + step.count, 0)
           if (draft.enabled && (blue !== draft.slotsPerSide || red !== draft.slotsPerSide)) {
@@ -154,6 +183,7 @@ export function validateBattleRule(rule: BattleRule): string[] {
           }
         }
       }
+      if (enabledCount === 0) errors.push('至少启用一种资源 Draft')
     }
   }
   return errors

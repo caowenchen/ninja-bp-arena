@@ -20,15 +20,16 @@ import { NinjaFilter, type QualityFilter } from '@/components/ninja/NinjaFilter'
 import { GameResultDialog } from '@/components/match/GameResultDialog'
 import { MatchResult } from '@/components/match/MatchResult'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { Dialog } from '@/components/common/Dialog'
 import { useMatchSource } from '@/matchSource/context'
 import { syncLocalTimer } from '@/matchSource/LocalMatchSource'
 import { useOnlineRoomStore } from '@/online/onlineRoomStore'
 import { useBPStore } from '@/store/bpStore'
 import { playSound } from '@/utils/sound'
-import { normalizeForSearch } from '@/utils/format'
+import { normalizeForSearch, searchRank } from '@/utils/format'
 import { CheckCircle2, Hourglass } from 'lucide-react'
 import { ResourceGrid } from '@/components/resource/ResourceGrid'
-import { getResourceDraftRules, RESOURCE_TYPE_LABEL, type DraftResource, type DraftResourceType } from '@bp-core'
+import { canSelectResource, getResourceCardStatus, getResourceDraftRules, RESOURCE_TYPE_LABEL, type DraftResource, type DraftResourceType } from '@bp-core'
 
 const QUALITY_ORDER = { S: 0, A: 1, B: 2, C: 3 } as const
 
@@ -48,13 +49,19 @@ export function BPWorkspace() {
   const [search, setSearch] = useState('')
   const [quality, setQuality] = useState<QualityFilter>('ALL')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
+  const [enabledOnly, setEnabledOnly] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
   const [winnerConfirm, setWinnerConfirm] = useState<Side | null>(null)
   const [resultOpen, setResultOpen] = useState(false)
   const [timeoutActive, setTimeoutActive] = useState(false)
+  const [inspected, setInspected] = useState<{ type: DraftResourceType; resource: DraftResource } | null>(null)
 
-  useKeyboardShortcuts(() => setSearch(''))
+  useKeyboardShortcuts({
+    onEscape: () => setSearch(''),
+    onUndo: isOnline ? undefined : () => { void source.undo() },
+    onRedo: isOnline ? undefined : () => { void source.redo() },
+  })
 
   const filteredNinjas = useMemo(() => {
     let pool = ninjas
@@ -65,26 +72,22 @@ export function BPWorkspace() {
     }
     const query = normalizeForSearch(search)
     let list = pool
-    if (query) {
-      // 搜索范围：名称 / 别名 / 标签 / 系列 / 形态
-      list = list.filter((n) => {
-        const haystacks = [n.name, ...(n.aliases ?? []), ...(n.tags ?? []), ...(n.series ?? []), ...(n.forms ?? [])]
-        return haystacks.some((text) => normalizeForSearch(text).includes(query))
-      })
-    }
+    if (query) list = list.filter((n) => searchRank(n, query) < Infinity)
+    if (enabledOnly) list = list.filter((n) => n.enabled && !n.deprecated)
     if (quality !== 'ALL') list = list.filter((n) => n.quality === quality)
     if (settings.ninjaSort === 'name') {
-      list = [...list].sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
+      list = [...list].sort((a, b) => (query ? searchRank(a, query) - searchRank(b, query) : 0) || a.name.localeCompare(b.name, 'zh-Hans-CN'))
     } else {
       list = [...list].sort(
         (a, b) =>
+          (query ? searchRank(a, query) - searchRank(b, query) : 0) ||
           (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
           QUALITY_ORDER[a.quality] - QUALITY_ORDER[b.quality] ||
           a.name.localeCompare(b.name, 'zh-Hans-CN'),
       )
     }
     return list
-  }, [ninjas, search, quality, settings.ninjaSort, isOnline, source.onlineNinjaIds])
+  }, [ninjas, search, quality, settings.ninjaSort, isOnline, source.onlineNinjaIds, enabledOnly])
 
   // 计时器：本地模式由客户端持久化 deadline；在线模式使用服务端权威 deadline
   const bpPhase = match ? getPhase(match) : null
@@ -96,9 +99,9 @@ export function BPWorkspace() {
     const pool = source.matchResources?.[viewedResourceType] ?? []
     const query = normalizeForSearch(search)
     return pool
-      .filter((item) => !query || [item.name, ...(item.aliases ?? []), ...(item.tags ?? [])].some((text) => normalizeForSearch(text).includes(query)))
-      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name, 'zh-Hans-CN'))
-  }, [viewedResourceType, search, source.matchResources])
+      .filter((item) => (!enabledOnly || (item.enabled && !item.deprecated)) && searchRank(item, query) < Infinity)
+      .sort((a, b) => (query ? searchRank(a, query) - searchRank(b, query) : 0) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name, 'zh-Hans-CN'))
+  }, [viewedResourceType, search, source.matchResources, enabledOnly])
   const inBPNow = bpPhase ? bpPhase.status === 'BANNING' || bpPhase.status === 'PICKING' : false
   useEffect(() => {
     if (!match) return
@@ -111,7 +114,7 @@ export function BPWorkspace() {
   const phase = getPhase(match)
   const inBP = phase.status === 'BANNING' || phase.status === 'PICKING'
 
-  const handlePick = (ninjaId: string, name: string) => {
+  const handlePick = (ninjaId: string) => {
     if (isOnline) {
       if (source.pendingCommand) {
         toast('正在确认上一步操作……', 'info')
@@ -134,7 +137,6 @@ export function BPWorkspace() {
             toast(result.reason, 'error')
             return
           }
-          toast(`已提交 ${name}，等待确认…`, 'info')
           setTimeoutActive(false)
         })()
         return
@@ -145,19 +147,17 @@ export function BPWorkspace() {
         toast(result.reason, 'error')
         return
       }
-      if (isOnline) toast(`已提交 ${name}，等待确认…`, 'info')
       setTimeoutActive(false)
     })
   }
 
-  const handleResourcePick = (resourceType: DraftResourceType, resourceId: string, name: string) => {
+  const handleResourcePick = (resourceType: DraftResourceType, resourceId: string) => {
     if (isOnline && !source.isMyTurn) {
       toast('等待对方选择……', 'info')
       return
     }
     void Promise.resolve(source.selectResource(resourceType, resourceId)).then((result) => {
       if (!result.ok && result.reason) toast(result.reason, 'error')
-      else if (isOnline) toast(`已提交 ${name}，等待确认…`, 'info')
       setTimeoutActive(false)
     })
   }
@@ -239,7 +239,8 @@ export function BPWorkspace() {
                   ))}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <NinjaSearch value={search} onChange={setSearch} placeholder={`搜索${RESOURCE_TYPE_LABEL[viewedResourceType]}名称、别名或标签…`} />
+                  <NinjaSearch value={search} onChange={setSearch} ariaLabel={`搜索${RESOURCE_TYPE_LABEL[viewedResourceType]}`} placeholder={`搜索${RESOURCE_TYPE_LABEL[viewedResourceType]}名称、别名或标签…`} />
+                  <button type="button" aria-pressed={enabledOnly} onClick={() => setEnabledOnly((value) => !value)} className={`rounded border border-ink-500 px-2 py-1.5 text-xs ${enabledOnly ? 'bg-gold-accent text-ink-950' : 'text-fog-400'}`}>仅启用</button>
                   {viewedResourceType === 'NINJA' && <NinjaFilter value={quality} onChange={setQuality} />}
                   {viewedResourceType === 'NINJA' && (
                   <div className="flex items-center gap-1 rounded-lg border border-ink-500 bg-ink-800 p-1" role="group" aria-label="状态筛选">
@@ -284,7 +285,8 @@ export function BPWorkspace() {
                       ninjas={filteredNinjas}
                       match={match}
                       statusFilter={statusFilter}
-                      onPick={(ninja) => handlePick(ninja.id, ninja.name)}
+                      onPick={(ninja) => handlePick(ninja.id)}
+                      onInspect={(ninja) => setInspected({ type: 'NINJA', resource: ninja })}
                       disabledReason={interactionReason}
                     />
                   ) : (
@@ -294,7 +296,8 @@ export function BPWorkspace() {
                       match={match}
                       canSelect={!interactionReason}
                       lockedReason={interactionReason}
-                      onSelect={(resource) => handleResourcePick(viewedResourceType, resource.id, resource.name)}
+                      onSelect={(resource) => handleResourcePick(viewedResourceType, resource.id)}
+                      onInspect={(resource) => setInspected({ type: viewedResourceType, resource })}
                     />
                   )}
                 </div>
@@ -340,6 +343,17 @@ export function BPWorkspace() {
       {/* 弹层 */}
       <BPHistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} />
       <GameResultDialog match={match} open={resultOpen} onClose={() => setResultOpen(false)} />
+      <Dialog open={!!inspected} onClose={() => setInspected(null)} title={inspected ? `${RESOURCE_TYPE_LABEL[inspected.type]}详情 · ${inspected.resource.name}` : '资源详情'}>
+        {inspected && <div className="space-y-2 text-sm text-fog-300">
+          <p>名称：{inspected.resource.name}</p>
+          {'quality' in inspected.resource && <p>品质：{inspected.resource.quality}</p>}
+          {inspected.resource.aliases?.length ? <p>别名：{inspected.resource.aliases.join('、')}</p> : null}
+          {inspected.resource.tags?.length ? <p>标签：{inspected.resource.tags.join('、')}</p> : null}
+          {'series' in inspected.resource && inspected.resource.series?.length ? <p>系列：{inspected.resource.series.join('、')}</p> : null}
+          <p>状态：{getResourceCardStatus(match, inspected.type, inspected.resource).reason || '可用'}</p>
+          <p>当前操作：{source.mySeat === 'OBSERVER' ? '观战只读' : canSelectResource(match, inspected.type, inspected.resource.id, inspected.resource).reason ?? '可以选择'}</p>
+        </div>}
+      </Dialog>
       <ConfirmDialog
         open={!!winnerConfirm}
         title={`确认 Game ${phase.gameNumber} ${winnerConfirm === 'BLUE' ? '蓝方' : '红方'}获胜？`}
@@ -401,7 +415,7 @@ function OnlineBanners() {
           <button
             type="button"
             onClick={() =>
-              void Promise.resolve(source.undo()).then((r) => {
+              void Promise.resolve(useOnlineRoomStore.getState().sendCommand('REJECT_UNDO')).then((r) => {
                 if (!r.ok && r.reason) toast(r.reason, 'error')
               })
             }

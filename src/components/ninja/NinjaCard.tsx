@@ -17,12 +17,15 @@ const STATUS_LABEL: Record<NinjaCardStatus, string> = {
   RED_PICKED: '红方已选',
   USED: '已使用',
   DISABLED: '已停用',
+  LOCKED: '当前不可选',
 }
 
 interface NinjaCardProps {
   ninja: Ninja
   status: NinjaCardStatus
+  selectable: boolean
   onPick: (ninja: Ninja) => void
+  onInspect?: (ninja: Ninja) => void
   /** 数据包更新后 7 天内的新忍者 NEW 徽标 */
   isNew?: boolean
   disabledReason?: string
@@ -33,19 +36,21 @@ interface NinjaCardProps {
  * 状态只靠 遮罩 / 描边 / 标签 / 透明度 表达，不做花哨背景。
  * React.memo + 引擎统一计算状态，倒计时变化不会引发卡片重渲染。
  */
-export const NinjaCard = memo(function NinjaCard({ ninja, status, onPick, isNew, disabledReason }: NinjaCardProps) {
-  const available = status === 'AVAILABLE' && !disabledReason
+export const NinjaCard = memo(function NinjaCard({ ninja, status, selectable, onPick, onInspect, isNew, disabledReason }: NinjaCardProps) {
+  const available = selectable && !disabledReason
   const dimmed = status === 'BANNED' || status === 'USED'
-  const reason = status === 'BANNED' ? '本局已被禁用' : status === 'BLUE_PICKED' ? '本局已被蓝方选择' : status === 'RED_PICKED' ? '本局已被红方选择' : status === 'USED' ? '上一小局已使用' : status === 'DISABLED' ? '资源已停用' : '可选择'
+  const reason = status === 'BANNED' ? '本局已被禁用' : status === 'BLUE_PICKED' ? '本局已被蓝方选择' : status === 'RED_PICKED' ? '本局已被红方选择' : status === 'USED' ? '上一小局已使用' : status === 'DISABLED' ? '资源已停用' : status === 'LOCKED' ? '当前非忍者阶段' : '可选择'
   const tooltip = `${ninja.name} · ${ninja.quality}${ninja.tags.length ? ` · ${ninja.tags.join(' / ')}` : ''} · ${reason}${disabledReason ? ` · ${disabledReason}` : ''}${ninja.dataVersion ? ` · 数据 ${ninja.dataVersion}` : ''}`
 
   return (
+    <div className="min-w-0">
     <button
       type="button"
       onClick={() => { if (available) onPick(ninja) }}
       title={tooltip}
       aria-disabled={!available}
-      aria-label={`${ninja.name}（${STATUS_LABEL[status]}）${disabledReason ? `—${disabledReason}` : ''}`}
+      disabled={!available}
+      aria-label={`${ninja.name}（${STATUS_LABEL[status]}${available && status !== 'AVAILABLE' ? '，当前仍可选择' : ''}）${disabledReason ? `—${disabledReason}` : ''}`}
       data-resource-card
       className={`group relative block w-full overflow-hidden rounded-md border text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-accent ${
         available
@@ -110,5 +115,7 @@ export const NinjaCard = memo(function NinjaCard({ ninja, status, onPick, isNew,
         <span className="name-clamp text-[11px] leading-tight text-fog-100">{ninja.name}</span>
       </div>
     </button>
+    {onInspect && <button type="button" data-resource-inspect onClick={() => onInspect(ninja)} aria-label={`查看${ninja.name}详情`} className="mt-1 min-h-9 w-full rounded border border-border-muted bg-surface-1 text-xs text-fog-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-accent">详情</button>}
+    </div>
   )
 })

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Side } from '@bp-core'
-import { getResourceDraftRules, snapshotResources } from '@bp-core'
+import { computeTimerPhaseKey, getResourceDraftRules, snapshotResources } from '@bp-core'
 import { useBPStore } from '@/store/bpStore'
 import { useNinjaStore } from '@/store/ninjaStore'
 import { useTimerStore } from '@/store/timerStore'
@@ -53,10 +53,11 @@ export function LocalMatchSource({ children }: { children: ReactNode }) {
 /** 本地计时器同步：phaseKey 变化才重建 deadline（供 BPWorkspace 使用） */
 export function syncLocalTimer(match: NonNullable<MatchSource['match']>, inBP: boolean) {
   const phase = getPhase(match)
-  const phaseKey = `${match.id}:G${phase.gameNumber}:${phase.sequenceComplete ? 'DONE' : `${phase.resourceType}:S${phase.stepIndex ?? 0}`}`
+  const phaseKey = computeTimerPhaseKey(match)
   const seconds = getResourceDraftRules(match.rule).find((item) => item.resourceType === phase.resourceType)?.timerSeconds ?? match.rule.timerSeconds
   useTimerStore.getState().sync({
     phaseKey,
+    legacyPhaseKey: `${match.id}:G${phase.gameNumber}:${phase.sequenceComplete ? 'DONE' : `${phase.resourceType}:S${phase.stepIndex ?? 0}`}`,
     seconds,
     enabled: match.rule.timerEnabled && inBP,
   })

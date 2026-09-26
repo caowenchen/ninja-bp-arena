@@ -60,7 +60,7 @@ export function CountdownTimer({ seconds, running, onExpire, className = '', dea
   const circumference = 2 * Math.PI * radius
 
   return (
-    <div className={`relative ${warning ? 'timer-warning' : ''} ${className}`}>
+    <div role="timer" aria-live="off" aria-label={`剩余 ${remaining} 秒`} className={`relative ${warning ? 'timer-warning' : ''} ${className}`}>
       <svg width="64" height="64" viewBox="0 0 64 64" className="-rotate-90">
         <circle cx="32" cy="32" r={radius} fill="none" stroke="currentColor" strokeWidth="4" className="text-ink-600" />
         <circle

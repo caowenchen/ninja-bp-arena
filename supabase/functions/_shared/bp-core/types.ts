@@ -143,6 +143,18 @@ export interface BattleRule {
   resourceDrafts?: ResourceDraftRule[]
 }
 
+/** Runtime projection. Legacy ninja fields are accepted at the boundary only. */
+export interface NormalizedBattleRule {
+  id: string
+  name: string
+  version: string
+  bestOf: number
+  winsRequired: number
+  timerEnabled: boolean
+  timerSeconds: number
+  resourceDrafts: ResourceDraftRule[]
+}
+
 /** 一次 Ban / Pick 操作记录 */
 export interface BPAction {
   id: string
